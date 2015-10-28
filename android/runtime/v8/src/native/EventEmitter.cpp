@@ -27,14 +27,11 @@ Persistent<FunctionTemplate> EventEmitter::constructorTemplate;
 static Persistent<String> eventsSymbol;
 Persistent<String> EventEmitter::emitSymbol;
 
-Handle<Value> EventEmitter::eventEmitterConstructor(const Arguments& args)
+void EventEmitter::eventEmitterConstructor(const FunctionCallbackInfo<Value>& args)
 {
-	HandleScope scope;
-
+	HandleScope scope(args.GetIsolate());
 	EventEmitter *emitter = new EventEmitter();
-	emitter->Wrap(args.This());
-
-	return args.This();
+	emitter->Wrap(args.GetIsolate(), args.This());
 }
 
 void EventEmitter::initTemplate()

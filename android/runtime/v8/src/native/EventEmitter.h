@@ -16,6 +16,13 @@
 
 namespace titanium {
 
+using v8::Handle;
+using v8::Persistent;
+using v8::Value;
+using v8::String;
+using v8::FunctionTemplate;
+using v8::FunctionCallbackInfo;
+
 // The base class for any object that emits events.
 // Provides an interface for listening to and firing events.
 // See events.js in the common runtime which implements most
@@ -23,15 +30,15 @@ namespace titanium {
 class EventEmitter : public NativeObject
 {
 public:
-	static v8::Persistent<v8::String> emitSymbol;
+	static Persistent<String> emitSymbol;
 
-	static v8::Handle<v8::Value> eventEmitterConstructor(const v8::Arguments& args);
+	static void eventEmitterConstructor(const FunctionCallbackInfo<Value>& args);
 	static void initTemplate();
 	static void dispose();
 
-	static v8::Persistent<v8::FunctionTemplate> constructorTemplate;
+	static Persistent<FunctionTemplate> constructorTemplate;
 
-	bool emit(v8::Handle<v8::String> event, int argc, v8::Handle<v8::Value> *argv);
+	bool emit(Handle<String> event, int argc, Handle<Value> *argv);
 
 protected:
 	EventEmitter()
