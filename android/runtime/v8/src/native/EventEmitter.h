@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2011 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2011-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  *
@@ -16,8 +16,9 @@
 
 namespace titanium {
 
-using v8::Handle;
 using v8::Persistent;
+using v8::Local;
+using v8::Context;
 using v8::Value;
 using v8::String;
 using v8::FunctionTemplate;
@@ -33,12 +34,12 @@ public:
 	static Persistent<String> emitSymbol;
 
 	static void eventEmitterConstructor(const FunctionCallbackInfo<Value>& args);
-	static void initTemplate();
+	static void initTemplate(Local<Context> context);
 	static void dispose();
 
 	static Persistent<FunctionTemplate> constructorTemplate;
 
-	bool emit(Handle<String> event, int argc, Handle<Value> *argv);
+	bool emit(Local<String> event, int argc, Local<Value> *argv);
 
 protected:
 	EventEmitter()

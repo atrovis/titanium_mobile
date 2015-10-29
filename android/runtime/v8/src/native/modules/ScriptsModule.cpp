@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2011-2012 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2011-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -24,24 +24,26 @@ using namespace v8;
 Persistent<FunctionTemplate> WrappedScript::constructor_template;
 Persistent<ObjectTemplate> WrappedContext::global_template;
 
-void WrappedContext::Initialize(Handle<Object> target)
+void WrappedContext::Initialize(Local<Object> target, Local<Context> context)
 {
-	HandleScope scope;
+	Isolate* isolate = context->GetIsolate();
+	HandleScope scope(isolate);
 
-	global_template = Persistent<ObjectTemplate>::New(ObjectTemplate::New());
-	global_template->SetInternalFieldCount(1);
+	Local<ObjectTemplate> gt = ObjectTemplate::New(isolate);
+	gt->SetInternalFieldCount(1);
+	global_template(isolate, gt);
 }
 
-WrappedContext* WrappedContext::Unwrap(Handle<Object> global)
+WrappedContext* WrappedContext::Unwrap(Local<Object> global)
 {
 	HandleScope scope;
 	return NativeObject::Unwrap<WrappedContext>(global->GetPrototype().As<Object>());
 }
 
-WrappedContext::WrappedContext(Persistent<Context> context)
-	: context_(context)
+WrappedContext::WrappedContext(Isolate* isolate, Local<Context> context)
+	: context_(isolate, context)
 {
-	HandleScope scope;
+	HandleScope scope(isolate);
 
 	Local<Object> globalProxy = context->Global();
 	Local<Object> global = globalProxy->GetPrototype().As<Object>();
@@ -51,61 +53,64 @@ WrappedContext::WrappedContext(Persistent<Context> context)
 WrappedContext::~WrappedContext()
 {
 	if (!context_.IsEmpty()) {
-		context_->DetachGlobal();
-		context_.Dispose();
-		context_.Clear();
+		GetV8Context(Isolate::GetCurrent())->DetachGlobal();
+		context_.Reset();
 	}
 }
 
-Persistent<Context> WrappedContext::GetV8Context()
+Local<Context> WrappedContext::GetV8Context(Isolate* isolate)
 {
-	return context_;
+	return Local<Context>::New(isolate, context_);
 }
 
-void WrappedScript::Initialize(Handle<Object> target)
+void WrappedScript::Initialize(Local<Object> target, Local<Context> context)
 {
-	HandleScope scope;
+	Isolate* isolate = context->GetIsolate();
+	HandleScope scope(isolate);
 
-	constructor_template = Persistent<FunctionTemplate>::New(FunctionTemplate::New(WrappedScript::New));
-	constructor_template->InstanceTemplate()->SetInternalFieldCount(1);
-	constructor_template->SetClassName(String::NewSymbol("Script"));
+	Local<FunctionTemplate> constructor = FunctionTemplate::New(isolate, WrappedScript::New);
+	constructor->InstanceTemplate()->SetInternalFieldCount(1);
+	constructor->SetClassName(FIXED_ONE_BYTE_STRING(isolate, "Script"));
 
-	DEFINE_PROTOTYPE_METHOD(constructor_template, "runInContext", WrappedScript::RunInContext);
-	DEFINE_PROTOTYPE_METHOD(constructor_template, "runInThisContext", WrappedScript::RunInThisContext);
-	DEFINE_PROTOTYPE_METHOD(constructor_template, "runInNewContext", WrappedScript::RunInNewContext);
+	constructor_template.Reset(constructor, ft);
 
-	DEFINE_METHOD(constructor_template, "createContext", WrappedScript::CreateContext);
-	DEFINE_METHOD(constructor_template, "disposeContext", WrappedScript::DisposeContext);
-	DEFINE_METHOD(constructor_template, "runInContext", WrappedScript::CompileRunInContext);
-	DEFINE_METHOD(constructor_template, "runInThisContext", WrappedScript::CompileRunInThisContext);
-	DEFINE_METHOD(constructor_template, "runInNewContext", WrappedScript::CompileRunInNewContext);
+	SetProtoMethod(constructor, "runInContext", WrappedScript::RunInContext);
+	SetProtoMethod(constructor, "runInThisContext", WrappedScript::RunInThisContext);
+	SetProtoMethod(constructor, "runInNewContext", WrappedScript::RunInNewContext);
 
-	target->Set(String::NewSymbol("Script"), constructor_template->GetFunction());
+	SetTemplateMethod(constructor, "createContext", WrappedScript::CreateContext);
+	SetTemplateMethod(constructor, "disposeContext", WrappedScript::DisposeContext);
+	SetTemplateMethod(constructor, "runInContext", WrappedScript::CompileRunInContext);
+	SetTemplateMethod(constructor, "runInThisContext", WrappedScript::CompileRunInThisContext);
+	SetTemplateMethod(constructor, "runInNewContext", WrappedScript::CompileRunInNewContext);
+
+	target->Set(FIXED_ONE_BYTE_STRING(isolate, "Script"), constructor->GetFunction());
 }
 
-Handle<Value> WrappedScript::New(const Arguments& args)
+void WrappedScript::New(const FunctionCallbackInfo<Value>& args)
 {
 	if (!args.IsConstructCall()) {
 		return V8Util::newInstanceFromConstructorTemplate(constructor_template, args);
 	}
 
-	HandleScope scope;
+	HandleScope scope(args.GetIsolate());
 	WrappedScript *t = new WrappedScript();
 	t->Wrap(args.Holder());
-	return WrappedScript::EvalMachine<compileCode, thisContext, wrapExternal>(args);
+	args.GetReturnValue().Set(WrappedScript::EvalMachine<compileCode, thisContext, wrapExternal>(args));
 }
 
 WrappedScript::~WrappedScript()
 {
-	script_.Dispose();
+	script_.Reset();
 }
 
-Handle<Value> WrappedScript::CreateContext(const Arguments& args)
+void WrappedScript::CreateContext(const FunctionCallbackInfo<Value>& args)
 {
-	HandleScope scope;
+	Isolate* isolate = args.GetIsolate();
+	EscapableHandleScope scope(isolate);
 
-	Persistent<Context> context = Context::New(NULL, WrappedContext::global_template);
-	WrappedContext *wrappedContext = new WrappedContext(context);
+	Persistent<Context> context = Context::New(isolate, WrappedContext::global_template);
+	WrappedContext *wrappedContext = new WrappedContext(isolate, context);
 	Local<Object> global = context->Global();
 
 	// Allow current context access to newly created context's objects.
@@ -113,12 +118,12 @@ Handle<Value> WrappedScript::CreateContext(const Arguments& args)
 
 	// If a sandbox is provided initial the new context's global with it.
 	if (args.Length() > 0) {
-		Local<Object> sandbox = args[0]->ToObject();
+		Local<Object> sandbox = args[0]->ToObject(isolate);
 		Local<Array> keys = sandbox->GetPropertyNames();
 
 		for (uint32_t i = 0; i < keys->Length(); i++) {
-			Handle<String> key = keys->Get(Integer::New(i))->ToString();
-			Handle<Value> value = sandbox->Get(key);
+			Local<String> key = keys->Get(Integer::New(isolate, i))->ToString(isolate);
+			Local<Value> value = sandbox->Get(key);
 			if (value == sandbox) {
 				value = global;
 			}
@@ -126,74 +131,76 @@ Handle<Value> WrappedScript::CreateContext(const Arguments& args)
 		}
 	}
 
-	return scope.Close(global);
+	return scope.Escape(global);
 }
 
-Handle<Value> WrappedScript::DisposeContext(const Arguments& args)
+void WrappedScript::DisposeContext(const FunctionCallbackInfo<Value>& args)
 {
-	HandleScope scope;
+	Isolate* isolate = args.GetIsolate();
+	HandleScope scope(isolate);
 
 	if (args.Length() < 1) {
-		return JSException::Error("Must pass the context as the first argument.");
+		return JSException::Error(isolate, "Must pass the context as the first argument.");
 	}
 
-	WrappedContext* wrappedContext = WrappedContext::Unwrap(args[0]->ToObject());
+	WrappedContext* wrappedContext = WrappedContext::Unwrap(args[0]->ToObject(isolate));
 	delete wrappedContext;
 }
 
-Handle<Value> WrappedScript::RunInContext(const Arguments& args)
+void WrappedScript::RunInContext(const FunctionCallbackInfo<Value>& args)
 {
 	return WrappedScript::EvalMachine<unwrapExternal, userContext, returnResult>(args);
 }
 
-Handle<Value> WrappedScript::RunInThisContext(const Arguments& args)
+void WrappedScript::RunInThisContext(const FunctionCallbackInfo<Value>& args)
 {
 	return WrappedScript::EvalMachine<unwrapExternal, thisContext, returnResult>(args);
 }
 
-Handle<Value> WrappedScript::RunInNewContext(const Arguments& args)
+void WrappedScript::RunInNewContext(const FunctionCallbackInfo<Value>& args)
 {
 	return WrappedScript::EvalMachine<unwrapExternal, newContext, returnResult>(args);
 }
 
-Handle<Value> WrappedScript::CompileRunInContext(const Arguments& args)
+void WrappedScript::CompileRunInContext(const FunctionCallbackInfo<Value>& args)
 {
 	return WrappedScript::EvalMachine<compileCode, userContext, returnResult>(args);
 }
 
-Handle<Value> WrappedScript::CompileRunInThisContext(const Arguments& args)
+void WrappedScript::CompileRunInThisContext(const FunctionCallbackInfo<Value>& args)
 {
 	return WrappedScript::EvalMachine<compileCode, thisContext, returnResult>(args);
 }
 
-Handle<Value> WrappedScript::CompileRunInNewContext(const Arguments& args)
+void WrappedScript::CompileRunInNewContext(const FunctionCallbackInfo<Value>& args)
 {
 	return WrappedScript::EvalMachine<compileCode, newContext, returnResult>(args);
 }
 
 template<WrappedScript::EvalInputFlags input_flag, WrappedScript::EvalContextFlags context_flag,
 	WrappedScript::EvalOutputFlags output_flag>
-Handle<Value> WrappedScript::EvalMachine(const Arguments& args)
+void WrappedScript::EvalMachine(const FunctionCallbackInfo<Value>& args)
 {
-	HandleScope scope;
+	Isolate* isolate = args.GetIsolate();
+	HandleScope scope(isolate);
 
 	if (input_flag == compileCode && args.Length() < 1) {
-		return ThrowException(Exception::TypeError(String::New("needs at least 'code' argument.")));
+		return isolate->ThrowException(Exception::TypeError(String::New(isolate, "needs at least 'code' argument.")));
 	}
 
 	const int sandbox_index = input_flag == compileCode ? 1 : 0;
 	if (context_flag == userContext && args.Length() < (sandbox_index + 1)) {
-		return ThrowException(Exception::TypeError(String::New("needs a 'context' argument.")));
+		return isolate->ThrowException(Exception::TypeError(String::New("needs a 'context' argument.")));
 	}
 
 	Local<String> code;
-	if (input_flag == compileCode) code = args[0]->ToString();
+	if (input_flag == compileCode) code = args[0]->ToString(isolate);
 
 	Local<Object> sandbox;
 	if (context_flag == newContext) {
-		sandbox = args[sandbox_index]->IsObject() ? args[sandbox_index]->ToObject() : Object::New();
+		sandbox = args[sandbox_index]->IsObject() ? args[sandbox_index]->ToObject(isolate) : Object::New(isolate);
 	} else if (context_flag == userContext) {
-		sandbox = args[sandbox_index]->ToObject();
+		sandbox = args[sandbox_index]->ToObject(isolate);
 	}
 
 	int filename_offset = 1;
@@ -203,7 +210,7 @@ Handle<Value> WrappedScript::EvalMachine(const Arguments& args)
 
 	const int filename_index = sandbox_index + filename_offset;
 	Local<String> filename =
-		args.Length() > filename_index ? args[filename_index]->ToString() : String::New("evalmachine.<anonymous>");
+		args.Length() > filename_index ? args[filename_index]->ToString(isolate) : String::New(isolate, "evalmachine.<anonymous>");
 
 	const int display_error_index = args.Length() - 1;
 	bool display_error = false;
@@ -221,11 +228,11 @@ Handle<Value> WrappedScript::EvalMachine(const Arguments& args)
 
 	if (context_flag == newContext) {
 		// Create the new context
-		context = Context::New();
+		context = Context::New(isolate);
 
 	} else if (context_flag == userContext) {
 		// Use the passed in context
-		contextArg = args[sandbox_index]->ToObject();
+		contextArg = args[sandbox_index]->ToObject(isolate);
 		nContext = WrappedContext::Unwrap(contextArg);
 		context = nContext->GetV8Context();
 	}
@@ -236,8 +243,8 @@ Handle<Value> WrappedScript::EvalMachine(const Arguments& args)
 		context->Enter();
 	}
 
-	Handle<Value> result;
-	Handle<Script> script;
+	Local<Value> result;
+	Local<Script> script;
 
 	if (input_flag == compileCode) {
 		// well, here WrappedScript::New would suffice in all cases, but maybe
@@ -245,14 +252,14 @@ Handle<Value> WrappedScript::EvalMachine(const Arguments& args)
 		script = output_flag == returnResult ? Script::Compile(code, filename) : Script::New(code, filename);
 		if (script.IsEmpty()) {
 			// Hack because I can't get a proper stacktrace on SyntaxError
-			return Undefined();
+			return Undefined(isolate);
 		}
 	} else {
 		WrappedScript *n_script = NativeObject::Unwrap<WrappedScript>(args.Holder());
 		if (!n_script) {
-			return ThrowException(Exception::Error(String::New("Must be called as a method of Script.")));
+			return isolate->ThrowException(Exception::Error(String::New(isolate, "Must be called as a method of Script.")));
 		} else if (n_script->script_.IsEmpty()) {
-			return ThrowException(Exception::Error(String::New("'this' must be a result of previous "
+			return isolate->ThrowException(Exception::Error(String::New(isolate, "'this' must be a result of previous "
 				"new Script(code) call.")));
 		}
 
@@ -272,7 +279,7 @@ Handle<Value> WrappedScript::EvalMachine(const Arguments& args)
 	} else {
 		WrappedScript *n_script = NativeObject::Unwrap<WrappedScript>(args.Holder());
 		if (!n_script) {
-			return ThrowException(Exception::Error(String::New("Must be called as a method of Script.")));
+			return isolate->ThrowException(Exception::Error(String::New(isolate, "Must be called as a method of Script.")));
 		}
 		n_script->script_ = Persistent<Script>::New(script);
 		result = args.This();
@@ -289,23 +296,24 @@ Handle<Value> WrappedScript::EvalMachine(const Arguments& args)
 	}
 
 	if (result->IsObject()) {
-		Local<Context> creation = result->ToObject()->CreationContext();
+		Local<Context> creation = result->ToObject(isolate)->CreationContext();
 	}
 
-	return result == args.This() ? result : scope.Close(result);
+	args.GetReturnValue().Set(result);
 }
 
-void ScriptsModule::Initialize(Handle<Object> target)
+void ScriptsModule::Initialize(Local<Object> target, Local<Context> context)
 {
-	HandleScope scope;
-	WrappedContext::Initialize(target);
-	WrappedScript::Initialize(target);
+	Isolate* isolate = context->GetIsolate();
+	HandleScope scope(isolate);
+	WrappedContext::Initialize(target, context);
+	WrappedScript::Initialize(target, context);
 }
 
 void ScriptsModule::Dispose()
 {
-	WrappedScript::constructor_template.Dispose();
-	WrappedContext::global_template.Dispose();
+	WrappedScript::constructor_template.Reset();
+	WrappedContext::global_template.Reset();
 }
 
 }

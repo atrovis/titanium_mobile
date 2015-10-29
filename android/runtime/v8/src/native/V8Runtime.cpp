@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2011-2012 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2011-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -37,6 +37,7 @@ Persistent<Object> V8Runtime::krollGlobalObject;
 Persistent<Array> V8Runtime::moduleContexts;
 
 jobject V8Runtime::javaInstance;
+Isolate* v8_isolate = nullptr;
 bool V8Runtime::debuggerEnabled = false;
 bool V8Runtime::DBG = false;
 
@@ -44,54 +45,56 @@ bool V8Runtime::DBG = false;
 void V8Runtime::collectWeakRef(Persistent<Value> ref, void *parameter)
 {
 	jobject v8Object = (jobject) parameter;
-	ref.Dispose();
+	ref.Reset();
 	JNIScope::getEnv()->DeleteGlobalRef(v8Object);
 }
 
 // Minimalistic logging function for internal JS
-static Handle<Value> krollLog(const Arguments& args)
+static void krollLog(const FunctionCallbackInfo<Value>& args)
 {
-	HandleScope scope;
+	HandleScope scope(args.GetIsolate());
 	uint32_t len = args.Length();
 
 	if (len < 2) {
 		return JSException::Error("log: missing required tag and message arguments");
 	}
 
-	Handle<String> tag = args[0]->ToString();
-	Handle<String> message = args[1]->ToString();
+	Local<String> tag = args[0]->ToString(isolate);
+	Local<String> message = args[1]->ToString(isolate);
 	for (uint32_t i = 2; i < len; ++i) {
-		message = String::Concat(String::Concat(message, String::New(" ")), args[i]->ToString());
+		message = String::Concat(String::Concat(message, String::New(" ")), args[i]->ToString(isolate));
 	}
 
 	String::Utf8Value tagValue(tag);
 	String::Utf8Value messageValue(message);
 	__android_log_print(ANDROID_LOG_DEBUG, *tagValue, *messageValue);
-
-	return Undefined();
 }
 
 /* static */
-void V8Runtime::bootstrap(Local<Object> global)
+void V8Runtime::bootstrap(Local<Context> context)
 {
-	EventEmitter::initTemplate();
+	Isolate* isolate = context->GetIsolate();
+	EventEmitter::initTemplate(context);
 
-	krollGlobalObject = Persistent<Object>::New(Object::New());
-	moduleContexts = Persistent<Array>::New(Array::New());
+	Local<Object> global = Object::New(isolate);
+	krollGlobalObject.Reset(isolate, global);
+	Local<Array> mc = Array::New(isolate);
+	moduleContexts.Reset(isolate, mc);
 
-	KrollBindings::initFunctions(krollGlobalObject);
+	KrollBindings::initFunctions(global, context);
 
-	DEFINE_METHOD(krollGlobalObject, "log", krollLog);
-	DEFINE_TEMPLATE(krollGlobalObject, "EventEmitter", EventEmitter::constructorTemplate);
+	SetMethod(isolate, krollGlobalObject, "log", krollLog);
+	Local<FunctionTemplate> eect = Local<FunctionTemplate>::New(isolate, EventEmitter::constructorTemplate);
+	krollGlobalObject->Set(FIXED_ONE_BYTE_STRING(isolate, "EventEmitter"), eect->GetFunction());
 
-	krollGlobalObject->Set(String::NewSymbol("runtime"), String::New("v8"));
-	krollGlobalObject->Set(String::NewSymbol("DBG"), v8::Boolean::New(V8Runtime::DBG));
-	krollGlobalObject->Set(String::NewSymbol("moduleContexts"), moduleContexts);
+	krollGlobalObject->Set(SYMBOL_LITERAL(isolate, "runtime"), FIXED_ONE_BYTE_STRING(isolate, "v8"));
+	krollGlobalObject->Set(SYMBOL_LITERAL(isolate, "DBG"), v8::Boolean::New(isolate, V8Runtime::DBG));
+	krollGlobalObject->Set(SYMBOL_LITERAL(isolate, "moduleContexts"), mc);
 
 	LOG_TIMER(TAG, "Executing kroll.js");
 
 	TryCatch tryCatch;
-	Handle<Value> result = V8Util::executeString(KrollBindings::getMainSource(), String::New("ti:/kroll.js"));
+	Local<Value> result = V8Util::executeString(KrollBindings::getMainSource(), String::New(isolate, "ti:/kroll.js"));
 
 	if (tryCatch.HasCaught()) {
 		V8Util::reportException(tryCatch, true);
@@ -101,7 +104,7 @@ void V8Runtime::bootstrap(Local<Object> global)
 		V8Util::reportException(tryCatch, true);
 	}
 
-	Handle<Function> mainFunction = Handle<Function>::Cast(result);
+	Local<Function> mainFunction = Local<Function>::Cast(result);
 	Local<Value> args[] = { Local<Value>::New(krollGlobalObject) };
 	mainFunction->Call(global, 1, args);
 
@@ -111,7 +114,7 @@ void V8Runtime::bootstrap(Local<Object> global)
 	}
 }
 
-static void logV8Exception(Handle<Message> msg, Handle<Value> data)
+static void logV8Exception(Local<Message> msg, Local<Value> data)
 {
 	HandleScope scope;
 
@@ -170,11 +173,17 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeIn
 	V8Runtime::javaInstance = env->NewGlobalRef(self);
 	JNIUtil::initCache();
 
-	Persistent<Context> context = Context::New();
+	Isolate::CreateParams params;
+	Isolate* isolate = Isolate::New(params);
+	v8_isolate = isolate;
+
+	Isolate::Scope isolate_scope(isolate);
+    HandleScope handle_scope(isolate);
+    Local<Context> context = Context::New(isolate);
 	context->Enter();
 
 	V8Runtime::globalContext = context;
-	V8Runtime::bootstrap(context->Global());
+	V8Runtime::bootstrap(context);
 
 	if (V8Runtime::debuggerEnabled) {
 		jclass v8RuntimeClass = env->FindClass("org/appcelerator/kroll/runtime/v8/V8Runtime");
@@ -206,14 +215,14 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeRu
 			V8Runtime::krollGlobalObject->Get(String::New("Module"))->ToObject());
 
 		runModuleFunction = Persistent<Function>::New(
-			Handle<Function>::Cast(moduleObject->Get(String::New("runModule"))));
+			Local<Function>::Cast(moduleObject->Get(String::New("runModule"))));
 	}
 
-	Handle<Value> jsSource = TypeConverter::javaStringToJsString(env, source);
-	Handle<Value> jsFilename = TypeConverter::javaStringToJsString(env, filename);
-	Handle<Value> jsActivity = TypeConverter::javaObjectToJsValue(env, activityProxy);
+	Local<Value> jsSource = TypeConverter::javaStringToJsString(env, source);
+	Local<Value> jsFilename = TypeConverter::javaStringToJsString(env, filename);
+	Local<Value> jsActivity = TypeConverter::javaObjectToJsValue(env, activityProxy);
 
-	Handle<Value> args[] = { jsSource, jsFilename, jsActivity };
+	Local<Value> args[] = { jsSource, jsFilename, jsActivity };
 	TryCatch tryCatch;
 
 	runModuleFunction->Call(moduleObject, 3, args);
@@ -230,16 +239,16 @@ JNIEXPORT jobject JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativ
 	ENTER_V8(V8Runtime::globalContext);
 	titanium::JNIScope jniScope(env);
 
-	Handle<Value> jsSource = TypeConverter::javaStringToJsString(env, source);
+	Local<Value> jsSource = TypeConverter::javaStringToJsString(env, source);
 	if (jsSource.IsEmpty() || !jsSource->IsString()) {
 		LOGE(TAG, "Error converting Javascript string, aborting evalString");
 		return NULL;
 	}
 
-	Handle<Value> jsFilename = TypeConverter::javaStringToJsString(env, filename);
+	Local<Value> jsFilename = TypeConverter::javaStringToJsString(env, filename);
 
 	TryCatch tryCatch;
-	Handle<Script> script = Script::Compile(jsSource->ToString(), jsFilename);
+	Local<Script> script = Script::Compile(jsSource->ToString(), jsFilename);
 	Local<Value> result = script->Run();
 
 	if (tryCatch.HasCaught()) {
@@ -332,8 +341,7 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeDi
 		KrollBindings::dispose();
 		EventEmitter::dispose();
 
-		V8Runtime::moduleContexts.Dispose();
-		V8Runtime::moduleContexts = Persistent<Array>();
+		V8Runtime::moduleContexts.Reset();
 
 		V8Runtime::globalContext->DetachGlobal();
 

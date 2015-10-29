@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2011 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2011-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -11,7 +11,7 @@
 #include <v8.h>
 
 #define ENTER_V8(context) \
-	v8::HandleScope scope;
+	v8::HandleScope scope(context.GetIsolate());
 
 #define IMMUTABLE_STRING_LITERAL(string_literal) \
 	::titanium::ImmutableAsciiStringLiteral::CreateFromLiteral( \
@@ -21,40 +21,11 @@
 	::titanium::ImmutableAsciiStringLiteral::CreateFromLiteral( \
 	string_literal, length)
 
-#define SYMBOL_LITERAL(string_literal) \
-	v8::Persistent<v8::String>::New(v8::String::NewSymbol(string_literal ""))
+#define SYMBOL_LITERAL(isolate, string_literal) \
+	v8::String::NewFromUtf8(isolate, string_literal "", v8::String::kInternalizedString)
 
-#define DEFINE_CONSTANT(target, name, value) \
-	(target)->Set(v8::String::NewSymbol(name), \
-		value, static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete))
-
-#define DEFINE_INT_CONSTANT(target, name, value) \
-	DEFINE_CONSTANT(target, name, v8::Integer::New(value))
-
-#define DEFINE_NUMBER_CONSTANT(target, name, value) \
-	DEFINE_CONSTANT(target, name, v8::Number::New(value))
-
-#define DEFINE_STRING_CONSTANT(target, name, value) \
-	DEFINE_CONSTANT(target, name, v8::String::New(value))
-
-#define DEFINE_TEMPLATE(target, name, tmpl) \
-	target->Set(v8::String::NewSymbol(name), tmpl->GetFunction())
-
-#define DEFINE_METHOD(target, name, callback) \
-	DEFINE_TEMPLATE(target, name, v8::FunctionTemplate::New(callback))
-
-
-#define DEFINE_PROTOTYPE_METHOD_DATA(templ, name, callback, data) \
-{ \
-	v8::Local<v8::Signature> __callback##_SIG = v8::Signature::New(templ); \
-	v8::Local<v8::FunctionTemplate> __callback##_TEM = \
-	v8::FunctionTemplate::New(callback, data, __callback##_SIG); \
-	templ->PrototypeTemplate()->Set(v8::String::NewSymbol(name), \
-		__callback##_TEM, PropertyAttribute(DontEnum)); \
-}
-
-#define DEFINE_PROTOTYPE_METHOD(templ, name, callback) \
-	DEFINE_PROTOTYPE_METHOD_DATA(templ, name, callback, v8::Handle<v8::Value>())
+#define FIXED_ONE_BYTE_STRING(isolate, string)                                \
+  (titanium::OneByteString((isolate), (string), sizeof(string) - 1))
 
 #ifdef TI_DEBUG
 # define LOG_HEAP_STATS(TAG) \
@@ -86,7 +57,84 @@
 
 namespace titanium {
 
-class ImmutableAsciiStringLiteral: public v8::String::ExternalAsciiStringResource
+inline v8::Local<v8::FunctionTemplate>
+    NewFunctionTemplate(v8::Isolate* isolate,
+    					v8::FunctionCallback callback,
+                        v8::Local<v8::Signature> signature = v8::Local<v8::Signature>()) {
+  return v8::FunctionTemplate::New(isolate, callback, v8::Local<v8::Value>(), signature);
+}
+
+inline void SetMethod(v8::Isolate* isolate,
+					  v8::Local<v8::Object> that,
+                      const char* name,
+                      v8::FunctionCallback callback) {
+  v8::Local<v8::Function> function =
+      NewFunctionTemplate(isolate, callback)->GetFunction();
+  // kInternalized strings are created in the old space.
+  const v8::NewStringType type = v8::NewStringType::kInternalized;
+  v8::Local<v8::String> name_string =
+      v8::String::NewFromUtf8(isolate, name, type).ToLocalChecked();
+  that->Set(name_string, function);
+  function->SetName(name_string);  // NODE_SET_METHOD() compatibility.
+}
+
+inline void SetProtoMethod(v8::Isolate* isolate,
+						   v8::Local<v8::FunctionTemplate> that,
+                           const char* name,
+                           v8::FunctionCallback callback) {
+  v8::Local<v8::Signature> signature = v8::Signature::New(isolate, that);
+  v8::Local<v8::Function> function =
+      NewFunctionTemplate(isolate, callback, signature)->GetFunction();
+  // kInternalized strings are created in the old space.
+  const v8::NewStringType type = v8::NewStringType::kInternalized;
+  v8::Local<v8::String> name_string =
+      v8::String::NewFromUtf8(isolate, name, type).ToLocalChecked();
+  that->PrototypeTemplate()->Set(name_string, function);
+  function->SetName(name_string);  // NODE_SET_PROTOTYPE_METHOD() compatibility.
+}
+
+inline void SetTemplateMethod(v8::Isolate* isolate,
+							  v8::Local<v8::FunctionTemplate> that,
+                              const char* name,
+                              v8::FunctionCallback callback) {
+  v8::Local<v8::Function> function =
+      NewFunctionTemplate(isolate, callback)->GetFunction();
+  // kInternalized strings are created in the old space.
+  const v8::NewStringType type = v8::NewStringType::kInternalized;
+  v8::Local<v8::String> name_string =
+      v8::String::NewFromUtf8(isolate, name, type).ToLocalChecked();
+  that->Set(name_string, function);
+  function->SetName(name_string);  // NODE_SET_METHOD() compatibility.
+}
+
+inline v8::Local<v8::String> OneByteString(v8::Isolate* isolate,
+                                           const char* data,
+                                           int length) {
+  return v8::String::NewFromOneByte(isolate,
+                                    reinterpret_cast<const uint8_t*>(data),
+                                    v8::String::kNormalString,
+                                    length);
+}
+
+inline v8::Local<v8::String> OneByteString(v8::Isolate* isolate,
+                                           const signed char* data,
+                                           int length) {
+  return v8::String::NewFromOneByte(isolate,
+                                    reinterpret_cast<const uint8_t*>(data),
+                                    v8::String::kNormalString,
+                                    length);
+}
+
+inline v8::Local<v8::String> OneByteString(v8::Isolate* isolate,
+                                           const unsigned char* data,
+                                           int length) {
+  return v8::String::NewFromOneByte(isolate,
+                                    reinterpret_cast<const uint8_t*>(data),
+                                    v8::String::kNormalString,
+                                    length);
+}
+
+class ImmutableAsciiStringLiteral: public v8::String::ExternalOneByteStringResource
 {
 public:
 	static v8::Handle<v8::String> CreateFromLiteral(const char *stringLiteral, size_t length);
@@ -115,36 +163,18 @@ private:
 	size_t buf_len_;
 };
 
-class V8Isolate
-{
-public:
-	V8Isolate()
-	{
-		if (v8::Isolate::GetCurrent() == NULL)
-		{
-			v8::Isolate::New()->Enter();
-			//v8::internal::Isolate::Current()->InitializeLoggingAndCounters();
-		}
-	}
-
-	bool IsAlive()
-	{
-		return !v8::V8::IsExecutionTerminating(v8::Isolate::GetCurrent()) && !v8::V8::IsDead();
-	}
-};
-
 class V8Util {
 public:
-	static v8::Handle<v8::Value> executeString(v8::Handle<v8::String> source, v8::Handle<v8::Value> filename);
-	static v8::Handle<v8::Value> newInstanceFromConstructorTemplate(v8::Persistent<v8::FunctionTemplate>& t,
-		const v8::Arguments& args);
-	static void objectExtend(v8::Handle<v8::Object> dest, v8::Handle<v8::Object> src);
+	static v8::Local<v8::Value> executeString(v8::Local<v8::String> source, v8::Local<v8::Value> filename);
+	static v8::Local<v8::Value> newInstanceFromConstructorTemplate(v8::Persistent<v8::FunctionTemplate>& t,
+		const v8::FunctionCallbackInfo<v8::Value>& args);
+	static void objectExtend(v8::Local<v8::Object> dest, v8::Local<v8::Object> src);
 	static void reportException(v8::TryCatch &tryCatch, bool showLine = true);
 	static void openJSErrorDialog(v8::TryCatch &tryCatch);
 	static void fatalException(v8::TryCatch &tryCatch);
-	static v8::Handle<v8::String> jsonStringify(v8::Handle<v8::Value> value);
-	static bool constructorNameMatches(v8::Handle<v8::Object>, const char* name);
-	static bool isNaN(v8::Handle<v8::Value> value);
+	static v8::Local<v8::String> jsonStringify(v8::Local<v8::Value> value);
+	static bool constructorNameMatches(v8::Local<v8::Object>, const char* name);
+	static bool isNaN(v8::Local<v8::Value> value);
 	static void dispose();
 };
 

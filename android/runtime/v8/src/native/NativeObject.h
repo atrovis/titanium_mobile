@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2011 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2011-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  *
@@ -12,9 +12,6 @@
 
 #include <v8.h>
 #include <assert.h>
-
-#include "util.h"
-#include "util-inl.h"
 
 namespace titanium {
 

@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2011-2012 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2011-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -43,38 +43,41 @@ std::map<std::string, jmethodID> KrollBindings::commonJsSourceRetrievalMethods;
 std::vector<LookupFunction> KrollBindings::externalLookups;
 std::map<std::string, bindings::BindEntry*> KrollBindings::externalLookupBindings;
 
-void KrollBindings::initFunctions(Handle<Object> exports)
+void KrollBindings::initFunctions(Local<Object> exports, Local<Context> context)
 {
-	DEFINE_METHOD(exports, "binding", KrollBindings::getBinding);
-	DEFINE_METHOD(exports, "externalBinding", KrollBindings::getExternalBinding);
-	DEFINE_METHOD(exports, "isExternalCommonJsModule", KrollBindings::isExternalCommonJsModule);
-	DEFINE_METHOD(exports, "getExternalCommonJsModule", KrollBindings::getExternalCommonJsModule);
+	Isolate* isolate = context->GetIsolate();
+	SetMethod(isolate, exports, "binding", KrollBindings::getBinding);
+	SetMethod(isolate, exports, "externalBinding", KrollBindings::getExternalBinding);
+	SetMethod(isolate, exports, "isExternalCommonJsModule", KrollBindings::isExternalCommonJsModule);
+	SetMethod(isolate, exports, "getExternalCommonJsModule", KrollBindings::getExternalCommonJsModule);
 }
 
-void KrollBindings::initNatives(Handle<Object> exports)
+void KrollBindings::initNatives(Local<Object> exports, Local<Context> context)
 {
-	HandleScope scope;
+	Isolate* isolate = context->GetIsolate();
+	HandleScope scope(isolate);
 	for (int i = 0; natives[i].name; ++i) {
 		if (natives[i].source == kroll_native) continue;
-		Local<String> name = String::New(natives[i].name);
-		Handle<String> source = IMMUTABLE_STRING_LITERAL_FROM_ARRAY(natives[i].source, natives[i].source_length);
+		Local<String> name = String::NewFromUtf8(isolate, natives[i].name);
+		Local<String> source = IMMUTABLE_STRING_LITERAL_FROM_ARRAY(natives[i].source, natives[i].source_length);
 		exports->Set(name, source);
 	}
 }
 
-void KrollBindings::initTitanium(Handle<Object> exports)
+void KrollBindings::initTitanium(Local<Object> exports, Local<Context> context)
 {
-	HandleScope scope;
+	Isolate* isolate = context->GetIsolate();
+	HandleScope scope(isolate);
 	JNIEnv *env = JNIScope::getEnv();
 	if (!env) {
 		LOGE(TAG, "Couldn't initialize JNIEnv");
 		return;
 	}
 
-	Proxy::bindProxy(exports);
-	KrollProxy::bindProxy(exports);
-	KrollModule::bindProxy(exports);
-	TitaniumModule::bindProxy(exports);
+	Proxy::bindProxy(exports, context);
+	KrollProxy::bindProxy(exports, context);
+	KrollModule::bindProxy(exports, context);
+	TitaniumModule::bindProxy(exports, context);
 }
 
 void KrollBindings::disposeTitanium()
@@ -87,50 +90,54 @@ void KrollBindings::disposeTitanium()
 
 static Persistent<Object> bindingCache;
 
-Handle<Value> KrollBindings::getBinding(const Arguments& args)
+void KrollBindings::getBinding(const FunctionCallbackInfo<Value>& args)
 {
-	HandleScope scope;
+	Isolate* isolate = args.GetIsolate();
+	EscapableHandleScope scope(isolate);
 
 	if (args.Length() == 0 || !args[0]->IsString()) {
-		return JSException::Error("Invalid arguments to binding, expected String");
+		JSException::Error(isolate, "Invalid arguments to binding, expected String");
+		return;
 	}
 
-	Handle<Object> binding = getBinding(args[0]->ToString());
+	Local<Object> binding = getBinding(isolate, args[0]->ToString(isolate));
 	if (binding.IsEmpty()) {
-		return Undefined();
+		return;
 	}
 
-	return scope.Close(binding);
+	args.GetReturnValue().Set(binding);
 }
 
-Handle<Value> KrollBindings::getExternalBinding(const Arguments& args)
+void KrollBindings::getExternalBinding(const FunctionCallbackInfo<Value>& args)
 {
-	HandleScope scope;
-
+	Isolate* isolate = args.GetIsolate();
 	if (args.Length() == 0 || !args[0]->IsString()) {
-		return JSException::Error("Invalid arguments to externalBinding, expected String");
+		JSException::Error(args.GetIsolate(), "Invalid arguments to externalBinding, expected String");
+		return;
 	}
 
-	Handle<String> binding = args[0]->ToString();
+	Local<Object> exports;
 
-	if (bindingCache->Has(binding)) {
-		return bindingCache->Get(binding)->ToObject();
+	Local<String> binding = args[0]->ToString(isolate);
+	Local<Object> cache = Local<Object>::New(isolate, bindingCache);
+	if (cache->Has(binding)) {
+		exports = cache->Get(binding)->ToObject(isolate);
+		args.GetReturnValue().Set(exports);
+		return;
 	}
 
-	String::AsciiValue bindingValue(binding);
+	String::Utf8Value bindingValue(binding);
 	std::string key(*bindingValue);
 
 	struct bindings::BindEntry *externalBinding = externalBindings[key];
 
 	if (externalBinding) {
-		Local<Object> exports = Object::New();
-		externalBinding->bind(exports);
-		bindingCache->Set(binding, exports);
-
-		return scope.Close(exports);
+		Local<Object> exports = Object::New(isolate);
+		Local<Context> context = isolate->GetCurrentContext();
+		externalBinding->bind(exports, context);
+		cache->Set(binding, exports);
 	}
-
-	return Undefined();
+	args.GetReturnValue().Set(exports);
 }
 
 void KrollBindings::addExternalBinding(const char *name, struct bindings::BindEntry *binding)
@@ -143,34 +150,38 @@ void KrollBindings::addExternalLookup(LookupFunction lookup)
 	externalLookups.push_back(lookup);
 }
 
-Handle<Object> KrollBindings::getBinding(Handle<String> binding)
+Local<Object> KrollBindings::getBinding(v8::Isolate* isolate, Local<String> binding)
 {
+	Local<Object> cache;
 	if (bindingCache.IsEmpty()) {
-		bindingCache = Persistent<Object>::New(Object::New());
+		cache = Object::New(isolate);
+		bindingCache.Reset(isolate, cache);
+	} else {
+		cache = Local<Object>::New(isolate, bindingCache);
 	}
 
 	String::Utf8Value bindingValue(binding);
 
-	if (bindingCache->Has(binding)) {
-		return bindingCache->Get(binding)->ToObject();
+	if (cache->Has(binding)) {
+		return cache->Get(binding)->ToObject(isolate);
 	}
 
 	int length = bindingValue.length();
 
 	struct bindings::BindEntry *native = bindings::native::lookupBindingInit(*bindingValue, length);
 	if (native) {
-		Local<Object> exports = Object::New();
-		native->bind(exports);
-		bindingCache->Set(binding, exports);
+		Local<Object> exports = Object::New(isolate);
+		native->bind(exports, isolate->GetCurrentContext());
+		cache->Set(binding, exports);
 
 		return exports;
 	}
 
 	struct bindings::BindEntry* generated = bindings::generated::lookupGeneratedInit(*bindingValue, length);
 	if (generated) {
-		Local<Object> exports = Object::New();
-		generated->bind(exports);
-		bindingCache->Set(binding, exports);
+		Local<Object> exports = Object::New(isolate);
+		generated->bind(exports, isolate->GetCurrentContext());
+		cache->Set(binding, exports);
 
 		return exports;
 	}
@@ -180,16 +191,16 @@ Handle<Object> KrollBindings::getBinding(Handle<String> binding)
 
 		struct bindings::BindEntry* external = (*lookupFunction)(*bindingValue, length);
 		if (external) {
-			Local<Object> exports = Object::New();
-			external->bind(exports);
-			bindingCache->Set(binding, exports);
+			Local<Object> exports = Object::New(isolate);
+			external->bind(exports, isolate->GetCurrentContext());
+			cache->Set(binding, exports);
 			externalLookupBindings[*bindingValue] = external;
 
 			return exports;
 		}
 	}
 
-	return Handle<Object>();
+	return Local<Object>();
 }
 
 // Dispose of all static function templates
@@ -197,7 +208,8 @@ Handle<Object> KrollBindings::getBinding(Handle<String> binding)
 // clears out the module lookup cache
 void KrollBindings::dispose()
 {
-	HandleScope scope;
+	Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope(isolate);
 
 	JNIEnv *env = JNIScope::getEnv();
 	std::map<std::string, jobject>::iterator iterMods;
@@ -222,7 +234,8 @@ void KrollBindings::dispose()
 		return;
 	}
 
-	Local<Array> propertyNames = bindingCache->GetPropertyNames();
+	Local<Object> cache = Local<Object>::New(isolate, bindingCache);
+	Local<Array> propertyNames = cache->GetPropertyNames();
 	uint32_t length = propertyNames->Length();
 
 	for (uint32_t i = 0; i < length; i++) {
@@ -250,8 +263,7 @@ void KrollBindings::dispose()
 
 	externalLookupBindings.clear();
 
-	bindingCache.Dispose();
-	bindingCache = Persistent<Object>();
+	bindingCache.Reset();
 }
 
 /*
@@ -269,36 +281,39 @@ void KrollBindings::addExternalCommonJsModule(const char *name, jobject sourcePr
  * Checks if an external CommonJS module with given name has been registered
  * here.
  */
-v8::Handle<v8::Value> KrollBindings::isExternalCommonJsModule(const Arguments& args)
+void KrollBindings::isExternalCommonJsModule(const FunctionCallbackInfo<Value>& args)
 {
-	HandleScope scope;
+	Isolate* isolate = args.GetIsolate();
+	HandleScope scope(isolate);
 
 	if (args.Length() == 0 || !args[0]->IsString()) {
-		return JSException::Error("Invalid arguments to isExternalCommonJsModule, expected String");
+		JSException::Error(isolate, "Invalid arguments to isExternalCommonJsModule, expected String");
+		return;
 	}
 
-	v8::Handle<v8::String> name = args[0]->ToString();
+	v8::Local<v8::String> name = args[0]->ToString(isolate);
 	v8::String::Utf8Value nameVal(name);
 	std::string nameKey(*nameVal);
 
 	bool exists = (externalCommonJsModules.count(nameKey) > 0);
-	v8::Handle<v8::Boolean> existsV8 = v8::Boolean::New(exists);
-	return scope.Close(existsV8);
+	args.GetReturnValue().Set(v8::Boolean::New(isolate, exists));
 }
 
 /*
  * Makes the KrollSourceCodeProvider's getSourceCode method call to grab
  * the source code of a CommonJS module stored in a native (java) external module.
  */
-v8::Handle<v8::Value> KrollBindings::getExternalCommonJsModule(const Arguments& args)
+void KrollBindings::getExternalCommonJsModule(const FunctionCallbackInfo<Value>& args)
 {
-	HandleScope scope;
+	Isolate* isolate = args.GetIsolate();
+	EscapableHandleScope scope(args.GetIsolate());
 
 	if (args.Length() == 0 || !args[0]->IsString()) {
-		return JSException::Error("Invalid arguments to getExternalCommonJsBinding, expected String");
+		JSException::Error(isolate, "Invalid arguments to getExternalCommonJsBinding, expected String");
+		return;
 	}
 
-	v8::Handle<v8::String> name = args[0]->ToString();
+	v8::Local<v8::String> name = args[0]->ToString(isolate);
 	v8::String::Utf8Value nameVal(name);
 	std::string nameKey(*nameVal);
 	std::string moduleRoot = nameKey;
@@ -337,11 +352,11 @@ v8::Handle<v8::Value> KrollBindings::getExternalCommonJsModule(const Arguments& 
 		}
 	}
 
-	v8::Handle<v8::Value> sourceCode = TypeConverter::javaStringToJsString(env, sourceJavaString);
-	return scope.Close(sourceCode);
+	v8::Local<v8::Value> sourceCode = TypeConverter::javaStringToJsString(isolate, env, sourceJavaString);
+	args.GetReturnValue().Set(sourceCode);
 }
 
-Handle<String> KrollBindings::getMainSource()
+Local<String> KrollBindings::getMainSource()
 {
 	return IMMUTABLE_STRING_LITERAL_FROM_ARRAY(kroll_native, sizeof(kroll_native)-1);
 }

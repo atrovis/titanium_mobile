@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2011 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2011-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -40,10 +40,9 @@ static struct {
 // Callback for V8 letting us know the JavaScript object is no longer reachable.
 // Once we receive this callback we can safely release our strong reference
 // on the wrapped Java object so it can become eligible for collection.
-static void DetachCallback(v8::Persistent<v8::Value> value, void *data)
-{
-	JavaObject *javaObject = static_cast<JavaObject*>(data);
-	javaObject->detach();
+static void DetachCallback(const v8::WeakCallbackData<v8::Object, JavaObject>& data) {
+    JavaObject* javaObject = data.GetParameter();
+    javaObject->detach();
 }
 
 JavaObject::JavaObject(jobject javaObject)
@@ -106,7 +105,7 @@ jobject JavaObject::getJavaObject()
 				LOGE(TAG, "Java object reference has been invalidated.");
 			}
 			isWeakRef_ = false;
-			handle_.MakeWeak(this, DetachCallback);
+			persistent().SetWeak(this, DetachCallback);
 			return javaObject;
 		}
 		return ReferenceTable::getReference(refTableKey_);
@@ -165,12 +164,13 @@ JavaObject::~JavaObject()
 	}
 }
 
-void JavaObject::wrap(Handle<Object> jsObject)
+// Do we need this special method instead of just using NativeObject::Wrap?
+void JavaObject::wrap(Isolate* isolate, Local<Object> jsObject)
 {
-	ASSERT(handle_.IsEmpty());
+	ASSERT(persistent().IsEmpty());
 	ASSERT(jsObject->InternalFieldCount() > 0);
-	handle_ = v8::Persistent<v8::Object>::New(jsObject);
-	handle_->SetPointerInInternalField(0, this);
+	jsObject->SetAlignedPointerInInternalField(0, this);
+	persistent().Reset(isolate, jsObject);
 }
 
 // Attaches the Java object to this native wrapper.
@@ -182,8 +182,9 @@ void JavaObject::attach(jobject javaObject)
 	ASSERT((javaObject && javaObject_ == NULL) || javaObject == NULL);
 	UPDATE_STATS(0, -1);
 
-	handle_.MakeWeak(this, DetachCallback);
-	handle_.MarkIndependent();
+
+	persistent().SetWeak(this, DetachCallback);
+    persistent().MarkIndependent();
 
 	if (javaObject) {
 		javaObject_ = javaObject;
@@ -193,7 +194,7 @@ void JavaObject::attach(jobject javaObject)
 
 void JavaObject::detach()
 {
-	handle_.MakeWeak(this, DetachCallback);
+	persistent().SetWeak(this, DetachCallback);
 
 	if (isDetached()) {
 		return;

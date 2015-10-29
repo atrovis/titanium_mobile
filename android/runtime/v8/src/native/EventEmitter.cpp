@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2011 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2011-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  *
@@ -31,36 +31,37 @@ void EventEmitter::eventEmitterConstructor(const FunctionCallbackInfo<Value>& ar
 {
 	HandleScope scope(args.GetIsolate());
 	EventEmitter *emitter = new EventEmitter();
-	emitter->Wrap(args.GetIsolate(), args.This());
+	emitter->Wrap(args.This());
 }
 
-void EventEmitter::initTemplate()
+void EventEmitter::initTemplate(Local<Context> context)
 {
-	HandleScope scope;
-	constructorTemplate = Persistent<FunctionTemplate>::New(FunctionTemplate::New(eventEmitterConstructor));
-	constructorTemplate->InstanceTemplate()->SetInternalFieldCount(1);
-	constructorTemplate->SetClassName(String::NewSymbol("EventEmitter"));
+	Isolate* isolate = context->GetIsolate();
+	HandleScope scope(isolate);
+	Local<FunctionTemplate> constructor = FunctionTemplate::New(isolate, eventEmitterConstructor);
+	constructor->InstanceTemplate()->SetInternalFieldCount(1);
+	constructor->SetClassName(FIXED_ONE_BYTE_STRING(isolate, "EventEmitter"));
+	constructorTemplate.Reset(isolate, constructor);
 
-	eventsSymbol = SYMBOL_LITERAL("_events");
-	emitSymbol = SYMBOL_LITERAL("emit");
+	eventsSymbol.Reset(isolate, FIXED_ONE_BYTE_STRING(isolate, "_events"));
+	emitSymbol.Reset(isolate, FIXED_ONE_BYTE_STRING(isolate, "emit"));
 }
 
 void EventEmitter::dispose()
 {
-	constructorTemplate.Dispose();
-	constructorTemplate = Persistent<FunctionTemplate>();
-
-	eventsSymbol.Dispose();
-	eventsSymbol = Persistent<String>();
-
-	emitSymbol.Dispose();
-	emitSymbol = Persistent<String>();
+	constructorTemplate.Reset();
+	eventsSymbol.Reset();
+	emitSymbol.Reset();
 }
 
 bool EventEmitter::emit(Handle<String> event, int argc, Handle<Value> *argv)
 {
-	HandleScope scope;
-	Handle<Value> events_v = handle_->Get(eventsSymbol);
+	Isolate* isolate = Isolate::GetCurrent();
+	HandleScope scope(isolate);
+
+	Local<Object> self = handle(); 
+
+	Handle<Value> events_v = self->Get(Local<String>::New(isolate, eventsSymbol));
 	if (!events_v->IsObject()) return false;
 
 	Handle<Object> events = events_v->ToObject();
@@ -71,7 +72,7 @@ bool EventEmitter::emit(Handle<String> event, int argc, Handle<Value> *argv)
 	if (listeners_v->IsFunction()) {
 		// Optimized one-listener case
 		Handle<Function> listener = Handle<Function>::Cast(listeners_v);
-		listener->Call(handle_, argc, argv);
+		listener->Call(self, argc, argv);
 		if (try_catch.HasCaught()) {
 			V8Util::fatalException(try_catch);
 			return false;
@@ -82,7 +83,7 @@ bool EventEmitter::emit(Handle<String> event, int argc, Handle<Value> *argv)
 			Handle<Value> listener_v = listeners->Get(i);
 			if (!listener_v->IsFunction()) continue;
 			Handle<Function> listener = Handle<Function>::Cast(listener_v);
-			listener->Call(handle_, argc, argv);
+			listener->Call(self, argc, argv);
 			if (try_catch.HasCaught()) {
 				V8Util::fatalException(try_catch);
 				return false;

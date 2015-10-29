@@ -20,14 +20,14 @@ using namespace v8;
 
 #define TAG "V8Util"
 
-Handle<String> ImmutableAsciiStringLiteral::CreateFromLiteral(const char *stringLiteral, size_t length)
+Local<String> ImmutableAsciiStringLiteral::CreateFromLiteral(const char *stringLiteral, size_t length)
 {
 	HandleScope scope;
 	Local<String> result = String::NewExternal(new ImmutableAsciiStringLiteral(stringLiteral, length));
 	return scope.Close(result);
 }
 
-Handle<Value> V8Util::executeString(Handle<String> source, Handle<Value> filename)
+Local<Value> V8Util::executeString(Local<String> source, Local<Value> filename)
 {
 	HandleScope scope;
 	TryCatch tryCatch;
@@ -49,7 +49,7 @@ Handle<Value> V8Util::executeString(Handle<String> source, Handle<Value> filenam
 	return scope.Close(result);
 }
 
-Handle<Value> V8Util::newInstanceFromConstructorTemplate(Persistent<FunctionTemplate>& t, const Arguments& args)
+Local<Value> V8Util::newInstanceFromConstructorTemplate(Persistent<FunctionTemplate>& t, const Arguments& args)
 {
 	HandleScope scope;
 	const int argc = args.Length();
@@ -64,14 +64,14 @@ Handle<Value> V8Util::newInstanceFromConstructorTemplate(Persistent<FunctionTemp
 	return scope.Close(instance);
 }
 
-void V8Util::objectExtend(Handle<Object> dest, Handle<Object> src)
+void V8Util::objectExtend(Local<Object> dest, Local<Object> src)
 {
-	Handle<Array> names = src->GetOwnPropertyNames();
+	Local<Array> names = src->GetOwnPropertyNames();
 	int length = names->Length();
 
 	for (int i = 0; i < length; ++i) {
-		Handle<Value> name = names->Get(i);
-		Handle<Value> value = src->Get(name);
+		Local<Value> name = names->Get(i);
+		Local<Value> value = src->Get(name);
 		dest->Set(name, value);
 	}
 }
@@ -83,7 +83,7 @@ static Persistent<String> nameSymbol, messageSymbol;
 void V8Util::reportException(TryCatch &tryCatch, bool showLine)
 {
 	HandleScope scope;
-	Handle<Message> message = tryCatch.Message();
+	Local<Message> message = tryCatch.Message();
 
 	if (nameSymbol.IsEmpty()) {
 		nameSymbol = SYMBOL_LITERAL("name");
@@ -108,9 +108,9 @@ void V8Util::reportException(TryCatch &tryCatch, bool showLine)
 	} else {
 		Local<Value> exception = tryCatch.Exception();
 		if (exception->IsObject()) {
-			Handle<Object> exceptionObj = exception->ToObject();
-			Handle<Value> message = exceptionObj->Get(messageSymbol);
-			Handle<Value> name = exceptionObj->Get(nameSymbol);
+			Local<Object> exceptionObj = exception->ToObject();
+			Local<Value> message = exceptionObj->Get(messageSymbol);
+			Local<Value> name = exceptionObj->Get(nameSymbol);
 
 			if (!message->IsUndefined() && !name->IsUndefined()) {
 				String::Utf8Value nameValue(name);
@@ -131,7 +131,7 @@ void V8Util::openJSErrorDialog(TryCatch &tryCatch)
 		return;
 	}
 
-	Handle<Message> message = tryCatch.Message();
+	Local<Message> message = tryCatch.Message();
 
 	jstring title = env->NewStringUTF("Runtime Error");
 	jstring errorMessage = TypeConverter::jsValueToJavaString(env, message->Get());
@@ -169,14 +169,14 @@ void V8Util::fatalException(TryCatch &tryCatch)
 	reportException(tryCatch, true);
 }
 
-Handle<String> V8Util::jsonStringify(Handle<Value> value)
+Local<String> V8Util::jsonStringify(Local<Value> value)
 {
 	HandleScope scope;
 
-	Handle<Object> json = Context::GetCurrent()->Global()->Get(String::New("JSON"))->ToObject();
-	Handle<Function> stringify = Handle<Function>::Cast(json->Get(String::New("stringify")));
-	Handle<Value> args[] = { value };
-	Handle<Value> result = stringify->Call(json, 1, args);
+	Local<Object> json = Context::GetCurrent()->Global()->Get(String::New("JSON"))->ToObject();
+	Local<Function> stringify = Local<Function>::Cast(json->Get(String::New("stringify")));
+	Local<Value> args[] = { value };
+	Local<Value> result = stringify->Call(json, 1, args);
     if (result.IsEmpty()) {
         LOGE(TAG, "!!!! JSON.stringify() result is null/undefined.!!!");
         return String::New("ERROR");
@@ -185,7 +185,7 @@ Handle<String> V8Util::jsonStringify(Handle<Value> value)
     }
 }
 
-bool V8Util::constructorNameMatches(Handle<Object> object, const char* name)
+bool V8Util::constructorNameMatches(Local<Object> object, const char* name)
 {
 	HandleScope scope;
 	Local<String> constructorName = object->GetConstructorName();
@@ -194,7 +194,7 @@ bool V8Util::constructorNameMatches(Handle<Object> object, const char* name)
 
 static Persistent<Function> isNaNFunction;
 
-bool V8Util::isNaN(Handle<Value> value)
+bool V8Util::isNaN(Local<Value> value)
 {
 	HandleScope scope;
 	Local<Object> global = Context::GetCurrent()->Global();
@@ -204,7 +204,7 @@ bool V8Util::isNaN(Handle<Value> value)
 		isNaNFunction = Persistent<Function>::New(isNaNValue.As<Function> ());
 	}
 
-	Handle<Value> args[] = { value };
+	Local<Value> args[] = { value };
 
 	return isNaNFunction->Call(global, 1, args)->BooleanValue();
 
