@@ -34,12 +34,14 @@ void AssetsModule::readAsset(const FunctionCallbackInfo<Value>& args)
 {
 	v8::Isolate* isolate = args.GetIsolate();
 	if (args.Length() < 1) {
-		return JSException::Error(isolate, "Missing required argument 'resourceName'.");
+		JSException::Error(isolate, "Missing required argument 'resourceName'.");
+		return;
 	}
 
 	JNIEnv *env = JNIScope::getEnv();
 	if (!env) {
-		return JSException::GetJNIEnvironmentError(isolate);
+		JSException::GetJNIEnvironmentError(isolate);
+		return;
 	}
 
 	jstring resourceName = TypeConverter::jsStringToJavaString(env, args[0]->ToString());
@@ -55,17 +57,20 @@ void AssetsModule::readAsset(const FunctionCallbackInfo<Value>& args)
 		LOGE(TAG, "Failed to load resource.");
 		env->ExceptionDescribe();
 		env->ExceptionClear();
-		return JSException::Error(isolate, "Failed to load resource, Java exception was thrown.");
+		JSException::Error(isolate, "Failed to load resource, Java exception was thrown.");
+		return;
 	}
 
 	if (!assetData) {
-		return v8::Null(isolate);
+		args.GetReturnValue().Set(v8::Null(isolate));
+		return;
 	}
 
 	jint len = env->GetStringLength(assetData);
 	const jchar *assetChars = env->GetStringChars(assetData, NULL);
 	if (!assetChars) {
-		return v8::Null(isolate);
+		args.GetReturnValue().Set(v8::Null(isolate));
+		return;
 	}
 
 	Local<String> resourceData = String::NewFromTwoByte(isolate, assetChars, v8::String::kNormalString, len);
@@ -81,7 +86,8 @@ void AssetsModule::readFile(const FunctionCallbackInfo<Value>& args)
 	HandleScope scope(isolate);
 
 	if (args.Length() == 0 || args[0]->IsNull() || args[0]->IsUndefined()) {
-		return JSException::Error(isolate, "assets.readFile requires a valid filename");
+		JSException::Error(isolate, "assets.readFile requires a valid filename");
+		return;
 	}
 
 	String::Utf8Value filename(args[0]);
@@ -89,18 +95,21 @@ void AssetsModule::readFile(const FunctionCallbackInfo<Value>& args)
 	FILE *file = fopen(*filename, "r");
 
 	if (!file) {
-		return JSException::Error(isolate, "Error opening file");
+		JSException::Error(isolate, "Error opening file");
+		return;
 	}
 
 	if (fseek(file, 0L, SEEK_END) != 0) {
 		fclose(file);
-		return JSException::Error(isolate, "Error reading file");
+		JSException::Error(isolate, "Error reading file");
+		return;
 	}
 
 	long fileLength;
 	if ((fileLength = ftell(file)) == -1) {
 		fclose(file);
-		return JSException::Error(isolate, "Error getting file length");
+		JSException::Error(isolate, "Error getting file length");
+		return;
 	}
 
 	rewind(file);
@@ -111,7 +120,8 @@ void AssetsModule::readFile(const FunctionCallbackInfo<Value>& args)
 	fclose(file);
 
 	if (ferror(file) != 0) {
-		return JSException::Error(isolate, "Error while reading file");
+		JSException::Error(isolate, "Error while reading file");
+		return;
 	}
 
 	LOGD(TAG, "got file data: %d bytes", fileLength);

@@ -20,38 +20,39 @@ using namespace v8;
 
 #define TAG "V8Util"
 
-Local<String> ImmutableAsciiStringLiteral::CreateFromLiteral(const char *stringLiteral, size_t length)
+Local<String> ImmutableAsciiStringLiteral::CreateFromLiteral(Isolate* isolate, const char *stringLiteral, size_t length)
 {
-	HandleScope scope;
-	Local<String> result = String::NewExternal(new ImmutableAsciiStringLiteral(stringLiteral, length));
-	return scope.Close(result);
+	EscapableHandleScope scope(isolate);
+	MaybeLocal<String> result = String::NewExternalOneByte(isolate, new ImmutableAsciiStringLiteral(stringLiteral, length));
+	return scope.Escape(result.ToLocalChecked());
 }
 
-Local<Value> V8Util::executeString(Local<String> source, Local<Value> filename)
+Local<Value> V8Util::executeString(Isolate* isolate, Local<String> source, Local<Value> filename)
 {
-	HandleScope scope;
+	EscapableHandleScope scope(isolate);
 	TryCatch tryCatch;
 
-	Local<Script> script = Script::Compile(source, filename);
+	Local<Script> script = Script::Compile(source, filename->ToString(isolate));
 	if (script.IsEmpty()) {
 		LOGF(TAG, "Script source is empty");
-		reportException(tryCatch, true);
-		return Undefined();
+		reportException(isolate, tryCatch, true);
+		return scope.Escape(Undefined(isolate));
 	}
 
 	Local<Value> result = script->Run();
 	if (result.IsEmpty()) {
 		LOGF(TAG, "Script result is empty");
-		reportException(tryCatch, true);
-		return Undefined();
+		reportException(isolate, tryCatch, true);
+		return scope.Escape(Undefined(isolate));
 	}
 
-	return scope.Close(result);
+	return scope.Escape(result);
 }
 
-Local<Value> V8Util::newInstanceFromConstructorTemplate(Persistent<FunctionTemplate>& t, const Arguments& args)
+Local<Value> V8Util::newInstanceFromConstructorTemplate(Persistent<FunctionTemplate>& t, const FunctionCallbackInfo<Value>& args)
 {
-	HandleScope scope;
+	Isolate* isolate = args.GetIsolate();
+	EscapableHandleScope scope(isolate);
 	const int argc = args.Length();
 	Local<Value>* argv = new Local<Value> [argc];
 
@@ -59,9 +60,9 @@ Local<Value> V8Util::newInstanceFromConstructorTemplate(Persistent<FunctionTempl
 		argv[i] = args[i];
 	}
 
-	Local<Object> instance = t->GetFunction()->NewInstance(argc, argv);
+	Local<Object> instance = t.Get(isolate)->GetFunction()->NewInstance(argc, argv);
 	delete[] argv;
-	return scope.Close(instance);
+	return scope.Escape(instance);
 }
 
 void V8Util::objectExtend(Local<Object> dest, Local<Object> src)
@@ -80,18 +81,18 @@ void V8Util::objectExtend(Local<Object> dest, Local<Object> src)
 
 static Persistent<String> nameSymbol, messageSymbol;
 
-void V8Util::reportException(TryCatch &tryCatch, bool showLine)
+void V8Util::reportException(Isolate* isolate, TryCatch &tryCatch, bool showLine)
 {
-	HandleScope scope;
+	HandleScope scope(isolate);
 	Local<Message> message = tryCatch.Message();
 
 	if (nameSymbol.IsEmpty()) {
-		nameSymbol = SYMBOL_LITERAL("name");
-		messageSymbol = SYMBOL_LITERAL("message");
+		nameSymbol.Reset(isolate, SYMBOL_LITERAL(isolate, "name"));
+		messageSymbol.Reset(isolate, SYMBOL_LITERAL(isolate, "message"));
 	}
 
 	if (showLine) {
-		Handle<Message> message = tryCatch.Message();
+		Local<Message> message = tryCatch.Message();
 		if (!message.IsEmpty()) {
 			String::Utf8Value filename(message->GetScriptResourceName());
 			String::Utf8Value msg(message->Get());
@@ -108,9 +109,9 @@ void V8Util::reportException(TryCatch &tryCatch, bool showLine)
 	} else {
 		Local<Value> exception = tryCatch.Exception();
 		if (exception->IsObject()) {
-			Local<Object> exceptionObj = exception->ToObject();
-			Local<Value> message = exceptionObj->Get(messageSymbol);
-			Local<Value> name = exceptionObj->Get(nameSymbol);
+			Local<Object> exceptionObj = exception->ToObject(isolate);
+			Local<Value> message = exceptionObj->Get(messageSymbol.Get(isolate));
+			Local<Value> name = exceptionObj->Get(nameSymbol.Get(isolate));
 
 			if (!message->IsUndefined() && !name->IsUndefined()) {
 				String::Utf8Value nameValue(name);
@@ -124,7 +125,7 @@ void V8Util::reportException(TryCatch &tryCatch, bool showLine)
 	}
 }
 
-void V8Util::openJSErrorDialog(TryCatch &tryCatch)
+void V8Util::openJSErrorDialog(Isolate* isolate, TryCatch &tryCatch)
 {
 	JNIEnv *env = JNIUtil::getJNIEnv();
 	if (!env) {
@@ -134,9 +135,9 @@ void V8Util::openJSErrorDialog(TryCatch &tryCatch)
 	Local<Message> message = tryCatch.Message();
 
 	jstring title = env->NewStringUTF("Runtime Error");
-	jstring errorMessage = TypeConverter::jsValueToJavaString(env, message->Get());
-	jstring resourceName = TypeConverter::jsValueToJavaString(env, message->GetScriptResourceName());
-	jstring sourceLine = TypeConverter::jsValueToJavaString(env, message->GetSourceLine());
+	jstring errorMessage = TypeConverter::jsValueToJavaString(isolate, env, message->Get());
+	jstring resourceName = TypeConverter::jsValueToJavaString(isolate, env, message->GetScriptResourceName());
+	jstring sourceLine = TypeConverter::jsValueToJavaString(isolate, env, message->GetSourceLine());
 
 	env->CallStaticVoidMethod(
 		JNIUtil::krollRuntimeClass,
@@ -152,74 +153,67 @@ void V8Util::openJSErrorDialog(TryCatch &tryCatch)
 	env->DeleteLocalRef(errorMessage);
 	env->DeleteLocalRef(resourceName);
 	env->DeleteLocalRef(sourceLine);
-
 }
 
 static int uncaughtExceptionCounter = 0;
 
-void V8Util::fatalException(TryCatch &tryCatch)
+void V8Util::fatalException(Isolate* isolate, TryCatch &tryCatch)
 {
-	HandleScope scope;
+	HandleScope scope(isolate);
 
 	// Check if uncaught_exception_counter indicates a recursion
 	if (uncaughtExceptionCounter > 0) {
-		reportException(tryCatch, true);
+		reportException(isolate, tryCatch, true);
 		LOGF(TAG, "Double exception fault");
 	}
-	reportException(tryCatch, true);
+	reportException(isolate, tryCatch, true);
 }
 
-Local<String> V8Util::jsonStringify(Local<Value> value)
+Local<String> V8Util::jsonStringify(Isolate* isolate, Local<Value> value)
 {
-	HandleScope scope;
+	HandleScope scope(isolate);
 
-	Local<Object> json = Context::GetCurrent()->Global()->Get(String::New("JSON"))->ToObject();
-	Local<Function> stringify = Local<Function>::Cast(json->Get(String::New("stringify")));
+	Local<Object> json = isolate->GetCurrentContext()->Global()->Get(FIXED_ONE_BYTE_STRING(isolate, "JSON"))->ToObject(isolate);
+	Local<Function> stringify = Local<Function>::Cast(json->Get(FIXED_ONE_BYTE_STRING(isolate, "stringify")));
 	Local<Value> args[] = { value };
 	Local<Value> result = stringify->Call(json, 1, args);
     if (result.IsEmpty()) {
         LOGE(TAG, "!!!! JSON.stringify() result is null/undefined.!!!");
-        return String::New("ERROR");
+        return FIXED_ONE_BYTE_STRING(isolate, "ERROR");
     } else {
-        return result->ToString();
+        return result->ToString(isolate);
     }
 }
 
-bool V8Util::constructorNameMatches(Local<Object> object, const char* name)
+bool V8Util::constructorNameMatches(Isolate* isolate, Local<Object> object, const char* name)
 {
-	HandleScope scope;
+	HandleScope scope(isolate);
 	Local<String> constructorName = object->GetConstructorName();
 	return strcmp(*String::Utf8Value(constructorName), name) == 0;
 }
 
 static Persistent<Function> isNaNFunction;
 
-bool V8Util::isNaN(Local<Value> value)
+bool V8Util::isNaN(Isolate* isolate, Local<Value> value)
 {
-	HandleScope scope;
-	Local<Object> global = Context::GetCurrent()->Global();
+	HandleScope scope(isolate);
+	Local<Object> global = isolate->GetCurrentContext()->Global();
 
 	if (isNaNFunction.IsEmpty()) {
-		Local<Value> isNaNValue = global->Get(String::NewSymbol("isNaN"));
-		isNaNFunction = Persistent<Function>::New(isNaNValue.As<Function> ());
+		Local<Value> isNaNValue = global->Get(SYMBOL_LITERAL(isolate, "isNaN"));
+		isNaNFunction.Reset(isolate, isNaNValue.As<Function>());
 	}
 
 	Local<Value> args[] = { value };
 
-	return isNaNFunction->Call(global, 1, args)->BooleanValue();
-
+	return isNaNFunction.Get(isolate)->Call(global, 1, args)->BooleanValue();
 }
 
 void V8Util::dispose()
 {
-	nameSymbol.Dispose();
-	nameSymbol = Persistent<String>();
-
-	messageSymbol.Dispose();
-	messageSymbol = Persistent<String>();
-
-	isNaNFunction.Dispose();
-	isNaNFunction = Persistent<Function>();
+	nameSymbol.Reset();
+	messageSymbol.Reset();
+	isNaNFunction.Reset();
 }
 
 }

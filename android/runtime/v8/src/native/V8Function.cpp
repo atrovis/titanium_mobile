@@ -30,10 +30,10 @@ extern "C" {
 JNIEXPORT jobject JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Function_nativeInvoke(
 	JNIEnv *env, jobject caller, jlong thisPointer, jlong functionPointer, jobjectArray functionArguments)
 {
-	ENTER_V8(V8Runtime::globalContext);
+	HandleScope scope(V8Runtime::v8_isolate);
 	titanium::JNIScope jniScope(env);
 
-	Local<Object> thisObject = Local<Object>((Object *) thisPointer);
+	Local<Object> thisObject = Local<Object>::Cast(External::New(V8Runtime::v8_isolate, (Object *) thisPointer));
 
 	// construct function from pointer
 	Function *jsFunction = (Function *) functionPointer;
@@ -41,7 +41,7 @@ JNIEXPORT jobject JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Function_nati
 	// create function arguments
 	int length;
 	v8::Handle<v8::Value> *jsFunctionArguments =
-		TypeConverter::javaObjectArrayToJsArguments(env, functionArguments, &length);
+		TypeConverter::javaObjectArrayToJsArguments(V8Runtime::v8_isolate, env, functionArguments, &length);
 
 	// call into the JS function with the provided argument
 	TryCatch tryCatch;
@@ -53,14 +53,14 @@ JNIEXPORT jobject JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Function_nati
 	}
 
 	if (tryCatch.HasCaught()) {
-		V8Util::openJSErrorDialog(tryCatch);
-		V8Util::reportException(tryCatch);
+		V8Util::openJSErrorDialog(V8Runtime::v8_isolate, tryCatch);
+		V8Util::reportException(V8Runtime::v8_isolate, tryCatch);
 
 		return NULL;
 	}
 	
 	bool isNew;
-	return TypeConverter::jsValueToJavaObject(env, object, &isNew);
+	return TypeConverter::jsValueToJavaObject(V8Runtime::v8_isolate, env, object, &isNew);
 }
 
 JNIEXPORT void JNICALL
@@ -68,11 +68,13 @@ Java_org_appcelerator_kroll_runtime_v8_V8Function_nativeRelease
 	(JNIEnv *env, jclass clazz, jlong ptr)
 {
 	ASSERT(ptr != 0);
-	Persistent<Function> function = Persistent<Function>((Function*) ptr);
 
 	// Release the JS function so it can be collected.
-	function.Dispose();
+	Local<Function> function = Local<Function>::Cast(External::New(V8Runtime::v8_isolate, (Function*) ptr));
 	function.Clear();
+
+	//Persistent<Function> function = Persistent<Function>((Function*) ptr);
+	//function.Reset();
 }
 
 #ifdef __cplusplus

@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2011 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2011-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -47,7 +47,7 @@ public:
 	static void initTitanium(v8::Local<v8::Object> exports, v8::Local<v8::Context> context);
 	static void disposeTitanium();
 
-	static v8::Local<v8::String> getMainSource();
+	static v8::Local<v8::String> getMainSource(v8::Isolate* isolate);
 
 	static void getBinding(const v8::FunctionCallbackInfo<v8::Value>& args);
 	static v8::Local<v8::Object> getBinding(v8::Isolate* isolate, v8::Local<v8::String> binding);

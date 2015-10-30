@@ -46,17 +46,17 @@ void APIModule::Initialize(Local<Object> target, Local<Context> context)
 	constructor->SetClassName(FIXED_ONE_BYTE_STRING(isolate, "API"));
 	constructorTemplate.Reset(isolate, constructor);
 
-	SetProtoMethod(constructor, "debug", logDebug);
-	SetProtoMethod(constructor, "debug", logDebug);
-	SetProtoMethod(constructor, "info", logInfo);
-	SetProtoMethod(constructor, "warn", logWarn);
-	SetProtoMethod(constructor, "error", logError);
-	SetProtoMethod(constructor, "trace", logTrace);
-	SetProtoMethod(constructor, "notice", logNotice);
-	SetProtoMethod(constructor, "critical", logCritical);
-	SetProtoMethod(constructor, "fatal", logFatal);
-	SetProtoMethod(constructor, "log", log);
-	SetProtoMethod(constructor, "getApiName", APIModule::getApiName);
+	SetProtoMethod(isolate, constructor, "debug", logDebug);
+	SetProtoMethod(isolate, constructor, "debug", logDebug);
+	SetProtoMethod(isolate, constructor, "info", logInfo);
+	SetProtoMethod(isolate, constructor, "warn", logWarn);
+	SetProtoMethod(isolate, constructor, "error", logError);
+	SetProtoMethod(isolate, constructor, "trace", logTrace);
+	SetProtoMethod(isolate, constructor, "notice", logNotice);
+	SetProtoMethod(isolate, constructor, "critical", logCritical);
+	SetProtoMethod(isolate, constructor, "fatal", logFatal);
+	SetProtoMethod(isolate, constructor, "log", log);
+	SetProtoMethod(isolate, constructor, "getApiName", APIModule::getApiName);
 
 	Local<ObjectTemplate> instanceTemplate = constructor->InstanceTemplate();
 	instanceTemplate->SetAccessor(FIXED_ONE_BYTE_STRING(isolate, "apiName"), APIModule::getter_apiName);
@@ -65,11 +65,11 @@ void APIModule::Initialize(Local<Object> target, Local<Context> context)
 	// Debugger will send an evaluation request calling this method
 	// when it wants the application to terminate immediately.
 	if (V8Runtime::debuggerEnabled) {
-		SetProtoMethod(constructor, "terminate", terminate);
-		SetProtoMethod(constructor, "debugBreak", debugBreak);
+		SetProtoMethod(isolate, constructor, "terminate", terminate);
+		SetProtoMethod(isolate, constructor, "debugBreak", debugBreak);
 	}
 
-	constructor->Inherit(KrollModule::proxyTemplate);
+	constructor->Inherit(KrollModule::proxyTemplate.Get(isolate));
 
 	target->Set(FIXED_ONE_BYTE_STRING(isolate, "API"),
                 constructor->GetFunction()->NewInstance());
@@ -218,11 +218,10 @@ Local<String> APIModule::combineLogMessages(const FunctionCallbackInfo<Value>& a
     // do in JS. Requiring the whitespace between arguments complicates matters
     // by introducing the " " token.
     Isolate* isolate = args.GetIsolate();
-    static Persistent<String> space;
-    space.Reset(isolate, String::New(isolate, " ")); // Cache for efficiency
-    Local<String> message = String::Empty();
+    Local<String> space = SYMBOL_LITERAL(isolate, " ");
+    Local<String> message = String::Empty(isolate);
     for (int i=startIndex; i < args.Length(); i++) {
-        message = String::Concat(message, String::Concat(space, args[i]->ToString()));
+        message = String::Concat(message, String::Concat(space, args[i]->ToString(isolate)));
     }
     
     return message;
@@ -230,12 +229,12 @@ Local<String> APIModule::combineLogMessages(const FunctionCallbackInfo<Value>& a
 
 void APIModule::getApiName(const FunctionCallbackInfo<Value>& args)
 {
-	args.GetReturnValue().Set(String::New(args.GetIsolate(), "Ti.API"));
+	args.GetReturnValue().Set(FIXED_ONE_BYTE_STRING(args.GetIsolate(), "Ti.API"));
 }
 
 void APIModule::getter_apiName(Local<Name> name, const PropertyCallbackInfo<Value>& args)
 {
-	APIModule::getApiName(args);
+	args.GetReturnValue().Set(FIXED_ONE_BYTE_STRING(args.GetIsolate(), "Ti.API"));
 }
 
 void APIModule::terminate(const FunctionCallbackInfo<Value>& args)
@@ -245,7 +244,7 @@ void APIModule::terminate(const FunctionCallbackInfo<Value>& args)
 
 void APIModule::debugBreak(const FunctionCallbackInfo<Value>& args)
 {
-	Debug::DebugBreak();
+	Debug::DebugBreak(args.GetIsolate());
 }
 
 void APIModule::Dispose()

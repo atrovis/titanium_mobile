@@ -13,13 +13,13 @@
 #define ENTER_V8(context) \
 	v8::HandleScope scope(context.GetIsolate());
 
-#define IMMUTABLE_STRING_LITERAL(string_literal) \
+#define IMMUTABLE_STRING_LITERAL(isolate, string_literal) \
 	::titanium::ImmutableAsciiStringLiteral::CreateFromLiteral( \
-		string_literal "", sizeof(string_literal) - 1)
+		isolate, string_literal "", sizeof(string_literal) - 1)
 
-#define IMMUTABLE_STRING_LITERAL_FROM_ARRAY(string_literal, length) \
+#define IMMUTABLE_STRING_LITERAL_FROM_ARRAY(isolate, string_literal, length) \
 	::titanium::ImmutableAsciiStringLiteral::CreateFromLiteral( \
-	string_literal, length)
+	isolate, string_literal, length)
 
 #define SYMBOL_LITERAL(isolate, string_literal) \
 	v8::String::NewFromUtf8(isolate, string_literal "", v8::String::kInternalizedString)
@@ -137,7 +137,7 @@ inline v8::Local<v8::String> OneByteString(v8::Isolate* isolate,
 class ImmutableAsciiStringLiteral: public v8::String::ExternalOneByteStringResource
 {
 public:
-	static v8::Handle<v8::String> CreateFromLiteral(const char *stringLiteral, size_t length);
+	static v8::Local<v8::String> CreateFromLiteral(v8::Isolate* isolate, const char *stringLiteral, size_t length);
 
 	ImmutableAsciiStringLiteral(const char *src, size_t src_len)
 			: buffer_(src), buf_len_(src_len)
@@ -165,16 +165,16 @@ private:
 
 class V8Util {
 public:
-	static v8::Local<v8::Value> executeString(v8::Local<v8::String> source, v8::Local<v8::Value> filename);
+	static v8::Local<v8::Value> executeString(v8::Isolate* isolate, v8::Local<v8::String> source, v8::Local<v8::Value> filename);
 	static v8::Local<v8::Value> newInstanceFromConstructorTemplate(v8::Persistent<v8::FunctionTemplate>& t,
 		const v8::FunctionCallbackInfo<v8::Value>& args);
 	static void objectExtend(v8::Local<v8::Object> dest, v8::Local<v8::Object> src);
-	static void reportException(v8::TryCatch &tryCatch, bool showLine = true);
-	static void openJSErrorDialog(v8::TryCatch &tryCatch);
-	static void fatalException(v8::TryCatch &tryCatch);
-	static v8::Local<v8::String> jsonStringify(v8::Local<v8::Value> value);
-	static bool constructorNameMatches(v8::Local<v8::Object>, const char* name);
-	static bool isNaN(v8::Local<v8::Value> value);
+	static void reportException(v8::Isolate* isolate, v8::TryCatch &tryCatch, bool showLine = true);
+	static void openJSErrorDialog(v8::Isolate* isolate, v8::TryCatch &tryCatch);
+	static void fatalException(v8::Isolate* isolate, v8::TryCatch &tryCatch);
+	static v8::Local<v8::String> jsonStringify(v8::Isolate* isolate, v8::Local<v8::Value> value);
+	static bool constructorNameMatches(v8::Isolate* isolate, v8::Local<v8::Object>, const char* name);
+	static bool isNaN(v8::Isolate* isolate, v8::Local<v8::Value> value);
 	static void dispose();
 };
 

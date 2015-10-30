@@ -59,7 +59,7 @@ class NativeObject
 
 
   inline v8::Local<v8::Object> handle(v8::Isolate* isolate) {
-    return v8::Local<v8::Object>::New(isolate, persistent());
+    return persistent().Get(isolate);
   }
 
 

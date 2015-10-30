@@ -61,31 +61,31 @@ bool EventEmitter::emit(Handle<String> event, int argc, Handle<Value> *argv)
 
 	Local<Object> self = handle(); 
 
-	Handle<Value> events_v = self->Get(Local<String>::New(isolate, eventsSymbol));
+	Local<Value> events_v = self->Get(eventsSymbol.Get(isolate));
 	if (!events_v->IsObject()) return false;
 
-	Handle<Object> events = events_v->ToObject();
+	Local<Object> events = events_v->ToObject(isolate);
 
-	Handle<Value> listeners_v = events->Get(event);
+	Local<Value> listeners_v = events->Get(event);
 	TryCatch try_catch;
 
 	if (listeners_v->IsFunction()) {
 		// Optimized one-listener case
-		Handle<Function> listener = Handle<Function>::Cast(listeners_v);
+		Local<Function> listener = Local<Function>::Cast(listeners_v);
 		listener->Call(self, argc, argv);
 		if (try_catch.HasCaught()) {
-			V8Util::fatalException(try_catch);
+			V8Util::fatalException(isolate, try_catch);
 			return false;
 		}
 	} else if (listeners_v->IsArray()) {
-		Handle<Array> listeners = Handle<Array>::Cast(listeners_v->ToObject()->Clone());
+		Local<Array> listeners = Local<Array>::Cast(listeners_v->ToObject(isolate)->Clone());
 		for (uint32_t i = 0; i < listeners->Length(); ++i) {
-			Handle<Value> listener_v = listeners->Get(i);
+			Local<Value> listener_v = listeners->Get(i);
 			if (!listener_v->IsFunction()) continue;
-			Handle<Function> listener = Handle<Function>::Cast(listener_v);
+			Local<Function> listener = Local<Function>::Cast(listener_v);
 			listener->Call(self, argc, argv);
 			if (try_catch.HasCaught()) {
-				V8Util::fatalException(try_catch);
+				V8Util::fatalException(isolate, try_catch);
 				return false;
 			}
 		}

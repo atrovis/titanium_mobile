@@ -64,7 +64,7 @@ Local<Object> ProxyFactory::createV8Proxy(v8::Isolate* isolate, jclass javaClass
 		Local<Value> className = TypeConverter::javaStringToJsString(isolate, env, javaClassName);
 		env->DeleteLocalRef(javaClassName);
 
-		Handle<Object> exports = KrollBindings::getBinding(className->ToString(isolate));
+		Local<Object> exports = KrollBindings::getBinding(isolate, className->ToString(isolate));
 
 		if (exports.IsEmpty()) {
 			String::Utf8Value classStr(className);
@@ -88,13 +88,13 @@ Local<Object> ProxyFactory::createV8Proxy(v8::Isolate* isolate, jclass javaClass
 	Local<Object> v8Proxy = creator->NewInstance(1, &external);
 	if (tryCatch.HasCaught()) {
 		LOGE(TAG, "Exception thrown while creating V8 proxy.");
-		V8Util::reportException(tryCatch);
+		V8Util::reportException(isolate, tryCatch);
 		return Local<Object>();
 	}
 
 	// set the pointer back on the java proxy
 	Proxy* proxy = NativeObject::Unwrap<Proxy>(v8Proxy);
-	jlong ptr = (jlong) *(proxy->handle_);
+	jlong ptr = (jlong) *(proxy->persistent().Get(isolate));
 
 	jobject javaV8Object = env->NewObject(JNIUtil::v8ObjectClass,
 		JNIUtil::v8ObjectInitMethod, ptr);
@@ -106,8 +106,9 @@ Local<Object> ProxyFactory::createV8Proxy(v8::Isolate* isolate, jclass javaClass
 	return scope.Escape(v8Proxy);
 }
 
-jobject ProxyFactory::createJavaProxy(jclass javaClass, Local<Object> v8Proxy, const Arguments& args)
+jobject ProxyFactory::createJavaProxy(jclass javaClass, Local<Object> v8Proxy, const v8::FunctionCallbackInfo<v8::Value>& args)
 {
+	Isolate* isolate = args.GetIsolate();
 	ProxyInfo* info;
 	GET_PROXY_INFO(javaClass, info);
 
@@ -127,10 +128,10 @@ jobject ProxyFactory::createJavaProxy(jclass javaClass, Local<Object> v8Proxy, c
 	// and cast it to a pointer. The Java proxy needs
 	// a reference to the V8 proxy for later use.
 	Proxy* proxy = NativeObject::Unwrap<Proxy>(v8Proxy);
-	jlong pv8Proxy = (jlong) *(proxy->handle_);
+	jlong pv8Proxy = (jlong) *(proxy->persistent().Get(isolate));
 
 	// We also pass the creation URL of the proxy so we can track relative URLs
-	Handle<Value> sourceUrl = args.Callee()->GetScriptOrigin().ResourceName();
+	Local<Value> sourceUrl = args.Callee()->GetScriptOrigin().ResourceName();
 	String::Utf8Value sourceUrlValue(sourceUrl);
 
 	const char *url = "app://app.js";
@@ -145,7 +146,7 @@ jobject ProxyFactory::createJavaProxy(jclass javaClass, Local<Object> v8Proxy, c
 	// if an Arguments object was passed as the sole argument.
 	bool calledFromCreate = false;
 	if (args.Length() == 1 && args[0]->IsObject()) {
-		if (V8Util::constructorNameMatches(args[0]->ToObject(), "Arguments")) {
+		if (V8Util::constructorNameMatches(isolate, args[0]->ToObject(isolate), "Arguments")) {
 			calledFromCreate = true;
 		}
 	}
@@ -155,22 +156,22 @@ jobject ProxyFactory::createJavaProxy(jclass javaClass, Local<Object> v8Proxy, c
 	// depends how this constructor was called.
 	jobjectArray javaArgs;
 	if (calledFromCreate) {
-		Local<Object> arguments = args[0]->ToObject();
-		int length = arguments->Get(Proxy::lengthSymbol)->Int32Value();
+		Local<Object> arguments = args[0]->ToObject(isolate);
+		int length = arguments->Get(Proxy::lengthSymbol.Get(isolate))->Int32Value();
 		int start = 0;
 
 		// Get the scope variables if provided and extract the source URL.
 		// We need to send that to the Java side when creating the proxy.
 		if (length > 0) {
-			Local<Object> scopeVars = arguments->Get(0)->ToObject();
-			if (V8Util::constructorNameMatches(scopeVars, "ScopeVars")) {
-				Local<Value> sourceUrl = scopeVars->Get(Proxy::sourceUrlSymbol);
-				javaSourceUrl = TypeConverter::jsValueToJavaString(env, sourceUrl);
+			Local<Object> scopeVars = arguments->Get(0)->ToObject(isolate);
+			if (V8Util::constructorNameMatches(isolate, scopeVars, "ScopeVars")) {
+				Local<Value> sourceUrl = scopeVars->Get(Proxy::sourceUrlSymbol.Get(isolate));
+				javaSourceUrl = TypeConverter::jsValueToJavaString(isolate, env, sourceUrl);
 				start = 1;
 			}
 		}
 
-		javaArgs = TypeConverter::jsObjectIndexPropsToJavaArray(env, arguments, start, length);
+		javaArgs = TypeConverter::jsObjectIndexPropsToJavaArray(isolate, env, arguments, start, length);
 	} else {
 		javaArgs = TypeConverter::jsArgumentsToJavaArray(env, args);
 	}
@@ -194,12 +195,12 @@ jobject ProxyFactory::createJavaProxy(jclass javaClass, Local<Object> v8Proxy, c
 	return javaProxy;
 }
 
-jobject ProxyFactory::unwrapJavaProxy(const Arguments& args)
+jobject ProxyFactory::unwrapJavaProxy(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
 	if (args.Length() != 1)
 		return NULL;
 	Local<Value> firstArgument = args[0];
-	return firstArgument->IsExternal() ? (jobject)External::Unwrap(firstArgument) : NULL;
+	return firstArgument->IsExternal() ? (jobject) (Local<External>::Cast(firstArgument)->Value()) : NULL;
 }
 
 void ProxyFactory::registerProxyPair(jclass javaProxyClass, FunctionTemplate* v8ProxyTemplate, bool createDeprecated)

@@ -29,26 +29,30 @@ public:
 	static void Dispose();
 };
 
-class WrappedContext: NativeObject
+class WrappedScript;
+
+class WrappedContext: public NativeObject
 {
 public:
-	WrappedContext(Persistent<Context> context);
+	WrappedContext(v8::Isolate* isolate, Local<Context> context);
 	virtual ~WrappedContext();
 
 	static void Initialize(Local<Object> target, Local<Context> context);
 
 	// Unwrap a context from the given global proxy object.
-	static WrappedContext* Unwrap(Local<Object> global);
+	static WrappedContext* Unwrap(v8::Handle<v8::Object> global);
 
-	Local<Context> GetV8Context();
+	void Dispose();
 
 	static Persistent<ObjectTemplate> global_template;
 
 protected:
 	Persistent<Context> context_;
+
+	friend class WrappedScript;
 };
 
-class WrappedScript: NativeObject
+class WrappedScript: public NativeObject
 {
 public:
 	static void Initialize(Local<Object> target, Local<Context> context);

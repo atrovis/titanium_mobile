@@ -59,7 +59,7 @@ void KrollBindings::initNatives(Local<Object> exports, Local<Context> context)
 	for (int i = 0; natives[i].name; ++i) {
 		if (natives[i].source == kroll_native) continue;
 		Local<String> name = String::NewFromUtf8(isolate, natives[i].name);
-		Local<String> source = IMMUTABLE_STRING_LITERAL_FROM_ARRAY(natives[i].source, natives[i].source_length);
+		Local<String> source = IMMUTABLE_STRING_LITERAL_FROM_ARRAY(isolate, natives[i].source, natives[i].source_length);
 		exports->Set(name, source);
 	}
 }
@@ -356,9 +356,9 @@ void KrollBindings::getExternalCommonJsModule(const FunctionCallbackInfo<Value>&
 	args.GetReturnValue().Set(sourceCode);
 }
 
-Local<String> KrollBindings::getMainSource()
+Local<String> KrollBindings::getMainSource(v8::Isolate* isolate)
 {
-	return IMMUTABLE_STRING_LITERAL_FROM_ARRAY(kroll_native, sizeof(kroll_native)-1);
+	return IMMUTABLE_STRING_LITERAL_FROM_ARRAY(isolate, kroll_native, sizeof(kroll_native)-1);
 }
 
 }

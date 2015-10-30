@@ -83,11 +83,11 @@ public:
 
 	// string convert methods
 	static jstring jsStringToJavaString(v8::Local<v8::String> jsString);
-	static jstring jsValueToJavaString(v8::Local<v8::Value> jsValue);
+	static jstring jsValueToJavaString(v8::Isolate* isolate, v8::Local<v8::Value> jsValue);
 	static v8::Local<v8::Value> javaStringToJsString(v8::Isolate* isolate, jstring javaString);
 
 	static jstring jsStringToJavaString(JNIEnv *env, v8::Local<v8::String> jsString);
-	static jstring jsValueToJavaString(JNIEnv *env, v8::Local<v8::Value> jsValue);
+	static jstring jsValueToJavaString(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Value> jsValue);
 	static v8::Local<v8::Value> javaStringToJsString(v8::Isolate* isolate, JNIEnv *env, jstring javaString);
 
 	// date convert methods
@@ -106,10 +106,10 @@ public:
 	}
 
 	// function convert methods
-	static jobject jsObjectToJavaFunction(v8::Local<v8::Object> jsObject);
+	static jobject jsObjectToJavaFunction(v8::Isolate* isolate, v8::Local<v8::Object> jsObject);
 	static v8::Local<v8::Function> javaObjectToJsFunction(v8::Isolate* isolate, jobject javaObject);
 
-	static jobject jsObjectToJavaFunction(JNIEnv *env, v8::Local<v8::Object> jsObject);
+	static jobject jsObjectToJavaFunction(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Object> jsObject);
 	static v8::Local<v8::Function> javaObjectToJsFunction(v8::Isolate* isolate, JNIEnv *env, jobject javaObject);
 
 	// arguments conversion
@@ -119,38 +119,38 @@ public:
 	// you have introduced a memory leak and the world will end.  plzkthksbye
 	static v8::Local<v8::Value> * javaObjectArrayToJsArguments(v8::Isolate* isolate, jobjectArray javaObjectArray, int *length);
 
-	static jobjectArray jsArgumentsToJavaArray(JNIEnv *env, v8::FunctionCallbackInfo<v8::Value>& args);
+	static jobjectArray jsArgumentsToJavaArray(JNIEnv *env, const v8::FunctionCallbackInfo<v8::Value>& args);
 	static v8::Local<v8::Value> * javaObjectArrayToJsArguments(v8::Isolate* isolate, JNIEnv *env, jobjectArray javaObjectArray, int *length);
 
 
 	// array convert methods
 	static jarray jsArrayToJavaArray(v8::Isolate* isolate, v8::Local<v8::Array> jsArray);
-	static jobjectArray jsArrayToJavaStringArray(v8::Local<v8::Array> jsArray);
+	static jobjectArray jsArrayToJavaStringArray(v8::Isolate* isolate, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, jbooleanArray javaBooleanArray);
-	static jshortArray jsArrayToJavaShortArray(v8::Local<v8::Array> jsArray);
+	static jshortArray jsArrayToJavaShortArray(v8::Isolate* isolate, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, jshortArray javaShortArray);
-	static jintArray jsArrayToJavaIntArray(v8::Local<v8::Array> jsArray);
+	static jintArray jsArrayToJavaIntArray(v8::Isolate* isolate, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, jintArray javaIntArray);
-	static jlongArray jsArrayToJavaLongArray(v8::Local<v8::Array> jsArray);
+	static jlongArray jsArrayToJavaLongArray(v8::Isolate* isolate, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, jlongArray javaLongArray);
-	static jfloatArray jsArrayToJavaFloatArray(v8::Local<v8::Array> jsArray);
+	static jfloatArray jsArrayToJavaFloatArray(v8::Isolate* isolate, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, jfloatArray javaFloatArray);
-	static jdoubleArray jsArrayToJavaDoubleArray(v8::Local<v8::Array> jsArray);
+	static jdoubleArray jsArrayToJavaDoubleArray(v8::Isolate* isolate, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, jdoubleArray javaDoubleArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, jobjectArray javaObjectArray);
 
 	static jarray jsArrayToJavaArray(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Array> jsArray);
-	static jobjectArray jsArrayToJavaStringArray(JNIEnv *env, v8::Local<v8::Array> jsArray);
+	static jobjectArray jsArrayToJavaStringArray(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, JNIEnv *env, jbooleanArray javaBooleanArray);
-	static jshortArray jsArrayToJavaShortArray(JNIEnv *env, v8::Local<v8::Array> jsArray);
+	static jshortArray jsArrayToJavaShortArray(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, JNIEnv *env, jshortArray javaShortArray);
-	static jintArray jsArrayToJavaIntArray(JNIEnv *env, v8::Local<v8::Array> jsArray);
+	static jintArray jsArrayToJavaIntArray(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, JNIEnv *env, jintArray javaIntArray);
-	static jlongArray jsArrayToJavaLongArray(JNIEnv *env, v8::Local<v8::Array> jsArray);
+	static jlongArray jsArrayToJavaLongArray(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, JNIEnv *env, jlongArray javaLongArray);
-	static jfloatArray jsArrayToJavaFloatArray(JNIEnv *env, v8::Local<v8::Array> jsArray);
+	static jfloatArray jsArrayToJavaFloatArray(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, JNIEnv *env, jfloatArray javaFloatArray);
-	static jdoubleArray jsArrayToJavaDoubleArray(JNIEnv *env, v8::Local<v8::Array> jsArray);
+	static jdoubleArray jsArrayToJavaDoubleArray(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Array> jsArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, JNIEnv *env, jdoubleArray javaDoubleArray);
 	static v8::Local<v8::Array> javaArrayToJsArray(v8::Isolate* isolate, JNIEnv *env, jobjectArray javaObjectArray);
 
@@ -165,22 +165,22 @@ public:
 		return jsValueToJavaObject(isolate, env, jsValue, &isNew);
 	}
 	
-	static jobject jsValueToJavaError(v8::Local<v8::Value> jsValue, bool *isNew);
+	static jobject jsValueToJavaError(v8::Isolate* isolate, v8::Local<v8::Value> jsValue, bool *isNew);
 	static jobject jsValueToJavaObject(v8::Isolate* isolate, v8::Local<v8::Value> jsValue, bool *isNew);
 	static v8::Local<v8::Value> javaObjectToJsValue(v8::Isolate* isolate, jobject javaObject);
-	static jobject jsObjectToJavaKrollDict(v8::Local<v8::Value> jsValue, bool *isNew);
+	static jobject jsObjectToJavaKrollDict(v8::Isolate* isolate, v8::Local<v8::Value> jsValue, bool *isNew);
 
-	static jobject jsValueToJavaError(JNIEnv *env, v8::Local<v8::Value> jsValue, bool *isNew);
+	static jobject jsValueToJavaError(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Value> jsValue, bool *isNew);
 	static jobject jsValueToJavaObject(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Value> jsValue, bool *isNew);
 	static v8::Local<v8::Object> javaHashMapToJsValue(v8::Isolate* isolate, JNIEnv *env, jobject javaObject);
 	static v8::Local<v8::Value> javaObjectToJsValue(v8::Isolate* isolate, JNIEnv *env, jobject javaObject);
-	static jobject jsObjectToJavaKrollDict(JNIEnv *env, v8::Local<v8::Value> jsValue, bool *isNew);
+	static jobject jsObjectToJavaKrollDict(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Value> jsValue, bool *isNew);
 
 	// Convert a JS object's indexed properties to a Java object array.
 	// Starts at index zero and continues until length is reached.
-	static jobjectArray jsObjectIndexPropsToJavaArray(v8::Local<v8::Object> jsObject, int start, int length);
+	static jobjectArray jsObjectIndexPropsToJavaArray(v8::Isolate* isolate, v8::Local<v8::Object> jsObject, int start, int length);
 
-	static jobjectArray jsObjectIndexPropsToJavaArray(JNIEnv *env, v8::Local<v8::Object> jsObject, int start, int length);
+	static jobjectArray jsObjectIndexPropsToJavaArray(v8::Isolate* isolate, JNIEnv *env, v8::Local<v8::Object> jsObject, int start, int length);
 
 private:
 	// utility methods
