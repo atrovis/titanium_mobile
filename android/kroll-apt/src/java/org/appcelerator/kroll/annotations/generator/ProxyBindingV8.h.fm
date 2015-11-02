@@ -45,7 +45,7 @@ private:
 	</@Proxy.listDynamicProperties>
 
 	<#if interceptor??>
-	static void interceptor(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<void>& info);
+	static void interceptor(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value>& info);
 	</#if>
 };
 

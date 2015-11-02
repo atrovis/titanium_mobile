@@ -80,11 +80,13 @@ public:
 	template<typename ProxyClass>
 	static void inherit(const v8::FunctionCallbackInfo<v8::Value>& args)
 	{
-		v8::HandleScope scope(args.GetIsolate());
+		v8::Isolate* isolate = args.GetIsolate();
+		v8::HandleScope scope(isolate);
 		v8::Local<v8::Function> fn = v8::Local<v8::Function>::Cast(args[0]);
 
 		v8::Local<v8::FunctionTemplate> newType = inheritProxyTemplate(
-			ProxyClass::proxyTemplate,
+			isolate,
+			ProxyClass::proxyTemplate.Get(isolate),
 			ProxyClass::javaClass,
 			fn->GetName()->ToString(), fn);
 		args.GetReturnValue().Set(newType->GetFunction());

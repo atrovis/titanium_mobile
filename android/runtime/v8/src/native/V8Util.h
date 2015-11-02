@@ -27,6 +27,38 @@
 #define FIXED_ONE_BYTE_STRING(isolate, string)                                \
   (titanium::OneByteString((isolate), (string), sizeof(string) - 1))
 
+#define DEFINE_CONSTANT(isolate, target, name, value) \
+	(target)->Set(SYMBOL_LITERAL(isolate, name), \
+		value, static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete))
+
+#define DEFINE_INT_CONSTANT(isolate, target, name, value) \
+	DEFINE_CONSTANT(isolate, target, name, v8::Integer::New(isolate, value))
+
+#define DEFINE_NUMBER_CONSTANT(isolate, target, name, value) \
+	DEFINE_CONSTANT(isolate, target, name, v8:: Number::New(isolate, value))
+
+#define DEFINE_STRING_CONSTANT(isolate, target, name, value) \
+	DEFINE_CONSTANT(isolate, target, name, FIXED_ONE_BYTE_STRING(isolate, value))
+
+#define DEFINE_TEMPLATE(isolate, target, name, tmpl) \
+	target->Set(SYMBOL_LITERAL(isolate, name), tmpl->GetFunction())
+
+#define DEFINE_METHOD(isolate, target, name, callback) \
+	DEFINE_TEMPLATE(isolate, target, name, v8::FunctionTemplate::New(isolate, callback))
+
+
+#define DEFINE_PROTOTYPE_METHOD_DATA(isolate, templ, name, callback, data) \
+{ \
+	v8::Local<v8::Signature> __callback##_SIG = v8::Signature::New(isolate, templ); \
+	v8::Local<v8::FunctionTemplate> __callback##_TEM = \
+	v8::FunctionTemplate::New(isolate, callback, data, __callback##_SIG); \
+	templ->PrototypeTemplate()->Set(SYMBOL_LITERAL(isolate, name), \
+		__callback##_TEM, static_cast<v8::PropertyAttribute>(DontEnum)); \
+}
+
+#define DEFINE_PROTOTYPE_METHOD(templ, name, callback) \
+	DEFINE_PROTOTYPE_METHOD_DATA(templ, name, callback, v8::Handle<v8::Value>())
+
 #ifdef TI_DEBUG
 # define LOG_HEAP_STATS(TAG) \
 { \
